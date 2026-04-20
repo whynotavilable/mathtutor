@@ -14,7 +14,7 @@ import {
   Menu, 
   MessageSquare, 
   Monitor, 
-  Moon, 
+  Moon, h
   Plus, 
   Search, 
   Settings, 
@@ -591,7 +591,7 @@ const StudentChat = ({ instructions, profile, session }: { instructions: Student
       const chatContext = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
       
       const response = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-2.0-flash",
         contents: `Analyze the following math study chat history between a student and an AI tutor. Provide a structured learning report in JSON format.
         
 Current Study Goals: ${instructions.currentGoals}
@@ -782,7 +782,7 @@ Provide the report in JSON following this exact field names:
       }));
 
       const chat = ai.chats.create({
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.0-flash',
         config: { systemInstruction },
         history,
       });
