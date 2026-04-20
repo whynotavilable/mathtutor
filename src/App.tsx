@@ -4,7 +4,7 @@ import {
   BarChart3, 
   BookOpen, 
   Bot, 
-  ChevronRight, h
+  ChevronRight,
   CircleUser, 
   ClipboardCheck, 
   Database, 
