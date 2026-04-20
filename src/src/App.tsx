@@ -619,7 +619,7 @@ Provide the report in JSON following this exact field names:
         }
       });
 
-      const reportData = JSON.parse(response.text || '{}');
+      const reportData = JSON.parse(response.text() || '{}');
 
       const { data, error } = await supabase
         .from('reports')
@@ -787,8 +787,8 @@ Provide the report in JSON following this exact field names:
         history,
       });
 
-      const response = await chat.sendMessage({ message: currentInput });
-      const botContent = response.text ?? '응답을 받지 못했습니다.';
+      const response = await chat.sendMessage(currentInput);
+      const botContent = response.text() ?? '응답을 받지 못했습니다.';
 
       setLoading(false);
       setIsTyping(true);
