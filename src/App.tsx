@@ -4,7 +4,7 @@ import {
   BarChart3, 
   BookOpen, 
   Bot, 
-  ChevronRight,
+  ChevronRight, 
   CircleUser, 
   ClipboardCheck, 
   Database, 
@@ -67,6 +67,7 @@ interface UserProfile {
   number: string;
   status: 'pending' | 'approved' | 'rejected' | 'none';
   role: 'student' | 'teacher';
+  instructions?: string;
   created_at?: string;
 }
 
@@ -401,98 +402,127 @@ const OnboardingTutorial = ({ role, onComplete }: { role: 'student' | 'teacher',
   );
 };
 
-const StudentSettings = ({ instructions, setInstructions }: { instructions: StudentInstructions, setInstructions: (val: any) => void }) => (
-  <div className="max-w-2xl mx-auto space-y-10 py-10">
-    <div>
-      <h2 className="text-3xl font-black text-ink uppercase tracking-tighter mb-2">My Profile Settings</h2>
-      <p className="text-xs text-secondary-text font-bold uppercase tracking-widest">나의 학습 성향과 목표를 관리하세요.</p>
-    </div>
+const StudentSettings = ({ instructions, setInstructions, profile }: { instructions: StudentInstructions, setInstructions: (val: any) => void, profile: UserProfile | null }) => {
+  const [saving, setSaving] = useState(false);
 
-    <div className="space-y-8">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="p-6 bg-white border border-highlight rounded-2xl shadow-sm space-y-4">
-           <label className="text-[10px] font-black text-accent uppercase tracking-widest block">문제 접근 방식</label>
-           <div className="flex bg-paper p-1 rounded-xl border border-highlight">
-              <button 
-                onClick={() => setInstructions({ ...instructions, problemSolvingApproach: 'intuitive' })}
-                className={cn("flex-1 py-2 text-[10px] font-black rounded-lg transition-all", instructions.problemSolvingApproach === 'intuitive' ? "bg-accent text-white" : "hover:bg-highlight text-secondary-text")}
-              >직관적 연상</button>
-              <button 
-                onClick={() => setInstructions({ ...instructions, problemSolvingApproach: 'logical' })}
-                className={cn("flex-1 py-2 text-[10px] font-black rounded-lg transition-all", instructions.problemSolvingApproach === 'logical' ? "bg-accent text-white" : "hover:bg-highlight text-secondary-text")}
-              >논리적 추론</button>
-           </div>
-        </div>
-        <div className="p-6 bg-white border border-highlight rounded-2xl shadow-sm space-y-4">
-           <label className="text-[10px] font-black text-accent uppercase tracking-widest block">힌트 제공 수준</label>
-           <div className="flex items-center gap-4">
-              <input 
-                type="range" min="1" max="3" step="1"
-                value={instructions.hintLevel}
-                onChange={(e) => setInstructions({ ...instructions, hintLevel: parseInt(e.target.value) })}
-                className="flex-1 accent-accent"
-              />
-              <span className="text-[10px] font-black text-ink">Level {instructions.hintLevel}</span>
-           </div>
-        </div>
+  const handleSave = async () => {
+    if (!profile) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('users')
+        .update({
+          instructions: JSON.stringify(instructions)
+        })
+        .eq('id', profile.id);
+      
+      if (error) throw error;
+      alert('설정이 성공적으로 저장되었습니다.');
+    } catch (err) {
+      console.error(err);
+      alert('저장 실패: ' + (err as any).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-10 py-10">
+      <div>
+        <h2 className="text-3xl font-black text-ink uppercase tracking-tighter mb-2">My Profile Settings</h2>
+        <p className="text-xs text-secondary-text font-bold uppercase tracking-widest">나의 학습 성향과 목표를 관리하세요.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="p-6 bg-white border border-highlight rounded-2xl shadow-sm flex items-center justify-between">
-           <label className="text-[10px] font-black text-accent uppercase tracking-widest block">스스로 설명 유도 여부</label>
-           <button 
-             onClick={() => setInstructions({ ...instructions, induceSelfExplanation: !instructions.induceSelfExplanation })}
-             className={cn("w-12 h-6 rounded-full relative transition-colors", instructions.induceSelfExplanation ? "bg-accent" : "bg-highlight")}
-           >
-              <div className={cn("absolute top-1 w-4 h-4 bg-white rounded-full transition-all", instructions.induceSelfExplanation ? "left-7" : "left-1")} />
-           </button>
-        </div>
-        <div className="p-6 bg-white border border-highlight rounded-2xl shadow-sm flex items-center justify-between">
-           <label className="text-[10px] font-black text-accent uppercase tracking-widest block">반복 학습 필요 여부</label>
-           <button 
-             onClick={() => setInstructions({ ...instructions, repeatNeeded: !instructions.repeatNeeded })}
-             className={cn("w-12 h-6 rounded-full relative transition-colors", instructions.repeatNeeded ? "bg-accent" : "bg-highlight")}
-           >
-              <div className={cn("absolute top-1 w-4 h-4 bg-white rounded-full transition-all", instructions.repeatNeeded ? "left-7" : "left-1")} />
-           </button>
-        </div>
-      </div>
-
-      {[
-        { label: "현재 학습 목표", key: "currentGoals", desc: "도달하고 싶은 목표 (예: 이번 중간고사 1등급)" },
-        { label: "선호 설명 방식", key: "preferredStyle", desc: "예: 그림을 통한 설명, 수식을 통한 증명" },
-        { label: "어려운 개념", key: "difficultConcepts", desc: "집중적인 케어가 필요한 부분" }
-      ].map((item) => (
-        <div key={item.key} className="p-8 bg-white border border-highlight rounded-2xl shadow-sm space-y-4">
-          <div className="flex justify-between items-start">
-             <div>
-                <label className="text-[10px] font-black text-accent uppercase tracking-widest block mb-1">{item.label}</label>
-                <p className="text-[10px] text-secondary-text font-bold">{item.desc}</p>
+      <div className="space-y-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="p-6 bg-white border border-highlight rounded-2xl shadow-sm space-y-4">
+             <label className="text-[10px] font-black text-accent uppercase tracking-widest block">문제 접근 방식</label>
+             <div className="flex bg-paper p-1 rounded-xl border border-highlight">
+                <button 
+                  onClick={() => setInstructions({ ...instructions, problemSolvingApproach: 'intuitive' })}
+                  className={cn("flex-1 py-2 text-[10px] font-black rounded-lg transition-all cursor-pointer", instructions.problemSolvingApproach === 'intuitive' ? "bg-accent text-white" : "hover:bg-highlight text-secondary-text")}
+                >직관적 연상</button>
+                <button 
+                  onClick={() => setInstructions({ ...instructions, problemSolvingApproach: 'logical' })}
+                  className={cn("flex-1 py-2 text-[10px] font-black rounded-lg transition-all cursor-pointer", instructions.problemSolvingApproach === 'logical' ? "bg-accent text-white" : "hover:bg-highlight text-secondary-text")}
+                >논리적 추론</button>
              </div>
-             <span className="text-[10px] font-black text-green-500 bg-green-50 px-2 py-0.5 rounded border border-green-100 uppercase tracking-widest">Active</span>
           </div>
-          <textarea 
-            value={(instructions as any)[item.key]}
-            onChange={(e) => setInstructions({ ...instructions, [item.key]: e.target.value })}
-            className="w-full mt-4 p-4 rounded-xl border border-highlight bg-paper text-sm font-semibold text-ink outline-none focus:ring-1 focus:ring-accent transition-all h-28 resize-none leading-relaxed"
-          />
+          <div className="p-6 bg-white border border-highlight rounded-2xl shadow-sm space-y-4">
+             <label className="text-[10px] font-black text-accent uppercase tracking-widest block">힌트 제공 수준</label>
+             <div className="flex items-center gap-4">
+                <input 
+                  type="range" min="1" max="3" step="1"
+                  value={instructions.hintLevel}
+                  onChange={(e) => setInstructions({ ...instructions, hintLevel: parseInt(e.target.value) })}
+                  className="flex-1 accent-accent cursor-pointer"
+                />
+                <span className="text-[10px] font-black text-ink">Level {instructions.hintLevel}</span>
+             </div>
+          </div>
         </div>
-      ))}
-    </div>
 
-    <div className="pt-6">
-      <button className="w-full py-4 bg-accent text-white rounded-xl font-black text-sm uppercase tracking-widest hover:bg-sidebar transition-all shadow-xl shadow-accent/10">
-        저장 및 적용하기
-      </button>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="p-6 bg-white border border-highlight rounded-2xl shadow-sm flex items-center justify-between">
+             <label className="text-[10px] font-black text-accent uppercase tracking-widest block">스스로 설명 유도 여부</label>
+             <button 
+               onClick={() => setInstructions({ ...instructions, induceSelfExplanation: !instructions.induceSelfExplanation })}
+               className={cn("w-12 h-6 rounded-full relative transition-colors cursor-pointer", instructions.induceSelfExplanation ? "bg-accent" : "bg-highlight")}
+             >
+                <div className={cn("absolute top-1 w-4 h-4 bg-white rounded-full transition-all", instructions.induceSelfExplanation ? "left-7" : "left-1")} />
+             </button>
+          </div>
+          <div className="p-6 bg-white border border-highlight rounded-2xl shadow-sm flex items-center justify-between">
+             <label className="text-[10px] font-black text-accent uppercase tracking-widest block">반복 학습 필요 여부</label>
+             <button 
+               onClick={() => setInstructions({ ...instructions, repeatNeeded: !instructions.repeatNeeded })}
+               className={cn("w-12 h-6 rounded-full relative transition-colors cursor-pointer", instructions.repeatNeeded ? "bg-accent" : "bg-highlight")}
+             >
+                <div className={cn("absolute top-1 w-4 h-4 bg-white rounded-full transition-all", instructions.repeatNeeded ? "left-7" : "left-1")} />
+             </button>
+          </div>
+        </div>
+
+        {[
+          { label: "현재 학습 목표", key: "currentGoals", desc: "도달하고 싶은 목표 (예: 이번 중간고사 1등급)" },
+          { label: "선호 설명 방식", key: "preferredStyle", desc: "예: 그림을 통한 설명, 수식을 통한 증명" },
+          { label: "어려운 개념", key: "difficultConcepts", desc: "집중적인 케어가 필요한 부분" }
+        ].map((item) => (
+          <div key={item.key} className="p-8 bg-white border border-highlight rounded-2xl shadow-sm space-y-4">
+            <div className="flex justify-between items-start">
+               <div>
+                  <label className="text-[10px] font-black text-accent uppercase tracking-widest block mb-1">{item.label}</label>
+                  <p className="text-[10px] text-secondary-text font-bold">{item.desc}</p>
+               </div>
+               <span className="text-[10px] font-black text-green-500 bg-green-50 px-2 py-0.5 rounded border border-green-100 uppercase tracking-widest">Active</span>
+            </div>
+            <textarea 
+              value={(instructions as any)[item.key]}
+              onChange={(e) => setInstructions({ ...instructions, [item.key]: e.target.value })}
+              className="w-full mt-4 p-4 rounded-xl border border-highlight bg-paper text-sm font-semibold text-ink outline-none focus:ring-1 focus:ring-accent transition-all h-28 resize-none leading-relaxed"
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="pt-6">
+        <button 
+          onClick={handleSave}
+          disabled={saving}
+          className="w-full py-4 bg-accent text-white rounded-xl font-black text-sm uppercase tracking-widest hover:bg-sidebar transition-all shadow-xl shadow-accent/10 disabled:opacity-50 cursor-pointer"
+        >
+          {saving ? '저장 중...' : '저장 및 적용하기'}
+        </button>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const StudentChat = ({ instructions, profile, session }: { instructions: StudentInstructions, profile: UserProfile | null, session: any }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => localStorage.getItem('ACTIVE_SESSION_ID') || null);
   const [loading, setLoading] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
   const [input, setInput] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -561,10 +591,10 @@ const StudentChat = ({ instructions, profile, session }: { instructions: Student
       const chatContext = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
       
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3-flash-preview",
         contents: `Analyze the following math study chat history between a student and an AI tutor. Provide a structured learning report in JSON format.
         
-Current Study Goals: ${instructions.currentGoals}
+Current Study Goals: ${instructions.currentGoals || 'Not specified'}
 
 Chat History:
 ${chatContext}
@@ -589,15 +619,16 @@ Provide the report in JSON following this exact field names:
         }
       });
 
-      const reportData = JSON.parse(response.text || '{}');
+      const text = response.text || "{}";
+      const reportData = JSON.parse(text);
 
       const { data, error } = await supabase
         .from('reports')
         .insert({
           session_id: activeSessionId,
-          summary: reportData.summary,
-          misconceptions: reportData.misconceptions,
-          recommendations: reportData.recommendations
+          summary: reportData.summary || "No summary available.",
+          misconceptions: reportData.misconceptions || "No misconceptions detected.",
+          recommendations: reportData.recommendations || "Keep practicing!"
         })
         .select()
         .single();
@@ -605,9 +636,10 @@ Provide the report in JSON following this exact field names:
       if (error) throw error;
       setReport(data);
       setActiveTab('report');
+      alert('학습 보고서가 생성되었습니다.');
     } catch (err) {
       console.error("Error generating report:", err);
-      alert("보고서 생성 중 오류가 발생했습니다.");
+      alert("보고서 생성 중 오류가 발생했습니다: " + (err as any).message);
     } finally {
       setIsGenerating(false);
     }
@@ -622,12 +654,20 @@ Provide the report in JSON following this exact field names:
       fetchMessages(activeSessionId);
       fetchReport(activeSessionId);
       setActiveTab('chat');
+      localStorage.setItem('ACTIVE_SESSION_ID', activeSessionId);
     } else {
       setMessages([]);
       setReport(null);
       setActiveTab('chat');
+      localStorage.removeItem('ACTIVE_SESSION_ID');
     }
   }, [activeSessionId]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, loading, isTyping]);
 
   // Helper to fix LaTeX delimiters
   const fixMathDelimiters = (content: string) => {
@@ -691,6 +731,26 @@ Provide the report in JSON following this exact field names:
     const currentInput = input;
     setInput('');
 
+    let sid = activeSessionId;
+    if (!sid) {
+      try {
+        const { data } = await supabase
+          .from('chat_sessions')
+          .insert({
+            user_id: profile.id,
+            title: currentInput.slice(0, 30)
+          })
+          .select().single();
+
+        if (data) {
+          sid = data.id;
+          setActiveSessionId(sid);
+          fetchSessions();
+        }
+      } catch {}
+      if (!sid) sid = crypto.randomUUID();
+    }
+
     const userMsg: Message = {
       id: crypto.randomUUID(),
       role: 'user',
@@ -698,6 +758,15 @@ Provide the report in JSON following this exact field names:
       timestamp: new Date(),
     };
     setMessages(prev => [...prev, userMsg]);
+
+    try {
+      await supabase.from('chat_messages')
+        .insert({
+          session_id: sid,
+          role: 'user',
+          content: currentInput
+        });
+    } catch {}
 
     try {
       const teacherRaw = localStorage.getItem('TEACHER_INSTRUCTIONS');
@@ -717,7 +786,7 @@ Provide the report in JSON following this exact field names:
       }));
 
       const chat = ai.chats.create({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-1.5-flash',
         config: { systemInstruction },
         history,
       });
@@ -725,13 +794,34 @@ Provide the report in JSON following this exact field names:
       const response = await chat.sendMessage({ message: currentInput });
       const botContent = response.text ?? '응답을 받지 못했습니다.';
 
+      setLoading(false);
+      setIsTyping(true);
+
+      const aiMsgId = crypto.randomUUID();
       const aiMsg: Message = {
-        id: crypto.randomUUID(),
+        id: aiMsgId,
         role: 'assistant',
-        content: botContent,
+        content: '',
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, aiMsg]);
+
+      // Typing animation
+      let output = '';
+      for (let char of botContent) {
+        output += char;
+        setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: output } : m));
+        await new Promise(r => setTimeout(r, 15));
+      }
+
+      try {
+        await supabase.from('chat_messages')
+          .insert({
+            session_id: sid,
+            role: 'assistant',
+            content: botContent
+          });
+      } catch {}
 
     } catch (err: any) {
       console.error('AI 호출 실패:', err);
@@ -741,8 +831,9 @@ Provide the report in JSON following this exact field names:
         content: `오류: ${err?.message ?? 'AI 연결 실패'}`,
         timestamp: new Date(),
       }]);
-    } finally {
       setLoading(false);
+    } finally {
+      setIsTyping(false);
     }
   };
 
@@ -752,8 +843,11 @@ Provide the report in JSON following this exact field names:
       <div className="w-64 bg-white dark:bg-gray-800 rounded-xl border border-highlight flex flex-col overflow-hidden shadow-sm shrink-0" id="student-chat-history">
         <div className="p-4 border-b border-highlight bg-gray-50/30">
            <button 
-             onClick={() => setActiveSessionId(null)}
-             className="w-full py-2.5 bg-accent text-white rounded-lg font-black text-[10px] uppercase tracking-widest shadow-lg shadow-accent/20 hover:scale-[1.02] active:scale-95 transition-all mb-4 flex items-center justify-center gap-2"
+             onClick={() => {
+               setActiveSessionId(null);
+               alert('새 대화를 시작합니다.');
+             }}
+             className="w-full py-2.5 bg-accent text-white rounded-lg font-black text-[10px] uppercase tracking-widest shadow-lg shadow-accent/20 hover:scale-[1.02] active:scale-95 transition-all mb-4 flex items-center justify-center gap-2 cursor-pointer"
            >
              <Plus size={14} /> 새 대화 시작
            </button>
@@ -778,9 +872,12 @@ Provide the report in JSON following this exact field names:
             ) : sessions.map((s) => (
               <button 
                 key={s.id} 
-                onClick={() => setActiveSessionId(s.id)}
+                onClick={() => {
+                  setActiveSessionId(s.id);
+                  alert(`'${s.title}' 대화로 이동합니다.`);
+                }}
                 className={cn(
-                  "w-full text-left p-2.5 rounded-lg transition-all border group",
+                  "w-full text-left p-2.5 rounded-lg transition-all border group cursor-pointer",
                   activeSessionId === s.id ? "bg-paper border-accent shadow-sm" : "border-transparent hover:bg-paper hover:border-highlight"
                 )}
               >
@@ -810,7 +907,7 @@ Provide the report in JSON following this exact field names:
                 <button 
                   onClick={() => setActiveTab('chat')}
                   className={cn(
-                    "px-4 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                    "px-4 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
                     activeTab === 'chat' ? "bg-white text-accent shadow-sm" : "text-secondary-text hover:text-accent"
                   )}
                 >
@@ -819,7 +916,7 @@ Provide the report in JSON following this exact field names:
                 <button 
                   onClick={() => setActiveTab('report')}
                   className={cn(
-                    "px-4 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                    "px-4 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
                     activeTab === 'report' ? "bg-white text-accent shadow-sm" : "text-secondary-text hover:text-accent"
                   )}
                 >
@@ -832,7 +929,7 @@ Provide the report in JSON following this exact field names:
             id="student-settings-btn"
             onClick={() => setShowSettings(!showSettings)}
             className={cn(
-               "px-4 py-2 rounded-lg transition-all border font-black text-[10px] uppercase tracking-widest shadow-sm", 
+               "px-4 py-2 rounded-lg transition-all border font-black text-[10px] uppercase tracking-widest shadow-sm cursor-pointer", 
                showSettings ? "bg-accent text-white border-accent" : "bg-white text-secondary-text border-highlight hover:border-accent hover:text-accent"
             )}
           >
@@ -871,6 +968,19 @@ Provide the report in JSON following this exact field names:
                   </span>
                 </div>
               ))}
+              {(loading || isTyping) && (
+                <div className="flex flex-col max-w-[85%] mr-auto items-start animate-in fade-in slide-in-from-bottom-2">
+                  <div className="p-4 rounded-2xl text-sm leading-relaxed shadow-sm bg-[#F7FAFC] text-ink border border-highlight rounded-tl-none flex items-center gap-2">
+                    <Bot size={16} className="text-accent animate-pulse" />
+                    <span className="text-secondary-text font-bold">AI가 생각 중</span>
+                    <span className="flex gap-1 items-center">
+                      <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, delay: 0 }} className="w-1 h-1 bg-accent rounded-full"></motion.span>
+                      <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, delay: 0.3 }} className="w-1 h-1 bg-accent rounded-full"></motion.span>
+                      <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, delay: 0.6 }} className="w-1 h-1 bg-accent rounded-full"></motion.span>
+                    </span>
+                  </div>
+                </div>
+              )}
               {/* Report Generation Trigger */}
               {messages.length > 2 && !report && (
                 <div className="flex justify-center pt-8 pb-4">
@@ -982,14 +1092,14 @@ Provide the report in JSON following this exact field names:
                 onKeyDown={(e) => e.key === "Enter" && handleSend()}
                 placeholder="수학 개념이나 문제를 질문해보세요..."
                 className="flex-1 bg-transparent border-none outline-none text-sm py-1.5 text-ink placeholder:text-secondary-text"
-                disabled={loading}
+                disabled={loading || isTyping}
               />
               <button 
                 onClick={handleSend}
-                className={cn("p-2.5 rounded-lg transition-all shadow-sm", input.trim() && !loading ? "bg-accent text-white hover:bg-sidebar" : "bg-gray-100 text-gray-300")}
-                disabled={!input.trim() || loading}
+                className={cn("p-2.5 rounded-lg transition-all shadow-sm", input.trim() && !loading && !isTyping ? "bg-accent text-white hover:bg-sidebar" : "bg-gray-100 text-gray-300")}
+                disabled={!input.trim() || loading || isTyping}
               >
-                {loading ? <RefreshCcw size={16} className="animate-spin" /> : <Send size={16} />}
+                {(loading || isTyping) ? <RefreshCcw size={16} className="animate-spin" /> : <Send size={16} />}
               </button>
             </div>
           </footer>
@@ -1141,6 +1251,17 @@ const StudentView = ({ session, profile, fetchProfile, handleTestLogin, handleLo
 }) => {
   const location = useLocation();
   const [instructions, setInstructions] = useState(DUMMY_STUDENT.instructions);
+
+  useEffect(() => {
+    if (profile?.instructions) {
+      try {
+        setInstructions(JSON.parse(profile.instructions));
+      } catch (err) {
+        console.error("Instructions parse error:", err);
+      }
+    }
+  }, [profile]);
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [formData, setFormData] = useState({ 
     name: profile?.name || '', 
@@ -1407,7 +1528,7 @@ const StudentView = ({ session, profile, fetchProfile, handleTestLogin, handleLo
           <Routes>
             <Route index element={<StudentChat instructions={instructions} profile={profile} session={session} />} />
             <Route path="history" element={<StudentHistory profile={profile} />} />
-            <Route path="settings" element={<StudentSettings instructions={instructions} setInstructions={setInstructions} />} />
+            <Route path="settings" element={<StudentSettings instructions={instructions} setInstructions={setInstructions} profile={profile} />} />
           </Routes>
         </div>
       </main>
@@ -2823,24 +2944,6 @@ const RoleSelection = ({ onSelect }: { onSelect: (role: 'student' | 'teacher') =
             </button>
           </form>
         </div>
-
-        <div className="bg-paper p-6 flex flex-col gap-3 items-center">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Test Mode</p>
-          <div className="flex gap-2 w-full">
-            <button 
-              onClick={() => handleSelect('student')}
-              className="flex-1 py-3 text-[9px] font-black text-accent border border-highlight bg-white rounded-xl hover:bg-accent hover:text-white transition-all uppercase tracking-widest"
-            >
-              학생 테스트 시작
-            </button>
-            <button 
-              onClick={() => handleSelect('teacher')}
-              className="flex-1 py-3 text-[9px] font-black text-sidebar border border-highlight bg-white rounded-xl hover:bg-sidebar hover:text-white transition-all uppercase tracking-widest"
-            >
-              교사 테스트 시작
-            </button>
-          </div>
-        </div>
       </motion.div>
     </div>
   );
@@ -3090,7 +3193,8 @@ export default function App() {
         .single();
 
       if (error && error.code === 'PGRST116') {
-        const hintedRole = localStorage.getItem('MATH_TUTOR_ROLE') || localStorage.getItem('role') || 'student';
+        const metadataRole = session.user.user_metadata?.role;
+        const hintedRole = metadataRole || localStorage.getItem('MATH_TUTOR_ROLE') || localStorage.getItem('role') || 'student';
         const { data: newData } = await supabase
           .from('users')
           .insert({
@@ -3117,7 +3221,9 @@ export default function App() {
       }
       setShowTutorial(true);
     } catch {
-      const hintedRole = localStorage.getItem('MATH_TUTOR_ROLE') || localStorage.getItem('role') || 'student';
+      // DB 호출 실패 시에만 fallback 적용
+      const metadataRole = session.user.user_metadata?.role;
+      const hintedRole = metadataRole || localStorage.getItem('MATH_TUTOR_ROLE') || localStorage.getItem('role') || 'student';
       const fallbackProfile: UserProfile = {
         id: uid,
         email: session.user.email,
@@ -3305,6 +3411,7 @@ export default function App() {
     localStorage.removeItem('TEST_USER_PROFILE');
     localStorage.removeItem('role');
     localStorage.removeItem('MATH_TUTOR_ROLE');
+    localStorage.removeItem('ACTIVE_SESSION_ID');
     await supabase.auth.signOut();
     setSession(null);
     setProfile(null);
