@@ -612,7 +612,7 @@ const OnboardingTutorial = ({ role, onComplete }: { role: 'student' | 'teacher',
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="px-2 py-0.5 bg-blue-50 text-blue-600 text-[10px] font-bold rounded uppercase tracking-wider">
-                      Step {currentStep + 1} / {currentRoleSteps.length}
+                      단계 {currentStep + 1} / {currentRoleSteps.length}
                     </span>
                   </div>
                   <h3 className="text-xl font-bold text-gray-900 dark:text-white leading-tight">
@@ -636,7 +636,7 @@ const OnboardingTutorial = ({ role, onComplete }: { role: 'student' | 'teacher',
                   onClick={onComplete}
                   className="px-2 py-1 text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors"
                 >
-                  Skip
+                  건너뛰기
                 </button>
                 
                 <div className="flex gap-2">
@@ -653,9 +653,9 @@ const OnboardingTutorial = ({ role, onComplete }: { role: 'student' | 'teacher',
                     className="px-6 py-2.5 bg-[#3B82F6] text-white rounded-lg font-bold text-sm hover:bg-blue-600 transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20 active:scale-95 group"
                   >
                     {currentStep === currentRoleSteps.length - 1 ? (
-                      <>Complete <CheckCircle size={18} /></>
+                      <>완료 <CheckCircle size={18} /></>
                     ) : (
-                      <>Next <ArrowRight size={18} /></>
+                      <>다음 <ArrowRight size={18} /></>
                     )}
                   </button>
                 </div>
@@ -2062,7 +2062,7 @@ const TeacherDashboard = ({ profile }: { profile: UserProfile | null }) => {
       <div className="bg-white rounded-xl border border-highlight p-8 shadow-sm">
         <div className="flex justify-between items-center mb-6">
           <h3 className="font-black text-sm text-ink uppercase tracking-wide">학급 평균 성취도 추이</h3>
-          <span className="text-[10px] font-bold text-accent px-2 py-1 bg-paper rounded uppercase">Monthly Progress</span>
+          <span className="text-[10px] font-bold text-accent px-2 py-1 bg-paper rounded uppercase">월별 추이</span>
         </div>
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
@@ -2096,7 +2096,7 @@ const TeacherDashboard = ({ profile }: { profile: UserProfile | null }) => {
       <div className="bg-white rounded-xl border border-highlight p-8 shadow-sm">
         <div className="flex justify-between items-center mb-6">
           <h3 className="font-black text-sm text-ink uppercase tracking-wide">단원별 이해도 분석</h3>
-          <span className="text-[10px] font-bold text-accent px-2 py-1 bg-paper rounded uppercase">Unit Mastery</span>
+          <span className="text-[10px] font-bold text-accent px-2 py-1 bg-paper rounded uppercase">단원 이해도</span>
         </div>
         <div className="h-64 flex justify-center">
           <ResponsiveContainer width="100%" height="100%">
@@ -2161,7 +2161,7 @@ const TeacherDashboard = ({ profile }: { profile: UserProfile | null }) => {
           <Bot size={40} className="text-white/20" />
         </div>
         <div>
-           <div className="inline-block px-2 py-1 bg-white/10 rounded text-[10px] font-bold uppercase tracking-widest mb-4">Daily Insights</div>
+           <div className="inline-block px-2 py-1 bg-white/10 rounded text-[10px] font-bold uppercase tracking-widest mb-4">오늘의 인사이트</div>
           <h3 className="text-xl font-bold mb-3">AI 인사이트</h3>
           <p className="text-white/70 text-sm mb-8 leading-relaxed">
             최근 미분법 단원에서 5명의 학생이 <span className="text-white font-bold">'합성함수 미분'</span> 개념에 어려움을 겪고 있습니다.<br/>
@@ -2963,12 +2963,12 @@ const TeacherChat = ({ profile, session }: { profile: UserProfile | null, sessio
     <div className="flex flex-col h-full bg-white dark:bg-gray-800 rounded-xl border border-highlight overflow-hidden shadow-sm relative">
       <div className="px-6 py-6 border-b border-highlight bg-gray-50/20 flex items-center justify-between shrink-0">
         <div>
-          <h2 className="text-lg font-black text-ink dark:text-white uppercase tracking-tight">AI Pedagogical Assistant</h2>
+          <h2 className="text-lg font-black text-ink dark:text-white uppercase tracking-tight">AI 수업 보조 어시스턴트</h2>
           <p className="text-[10px] text-secondary-text font-bold uppercase tracking-widest">교과 지도 및 학생 분석 도우미</p>
         </div>
         <div className="flex items-center gap-2">
            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-           <span className="text-[10px] font-black text-green-600 uppercase">Online</span>
+           <span className="text-[10px] font-black text-green-600 uppercase">연결됨</span>
         </div>
       </div>
       
@@ -3487,7 +3487,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
             <Route path="approvals" element={isAdmin ? (
               <div className="space-y-8">
                 <div>
-                   <h2 className="text-2xl font-black text-ink uppercase tracking-tighter mb-1">Enrollment Approvals</h2>
+                   <h2 className="text-2xl font-black text-ink uppercase tracking-tighter mb-1">가입 승인 관리</h2>
                    <p className="text-xs text-secondary-text font-bold uppercase tracking-widest">신규 학생 가입 요청 관리</p>
                 </div>
                 <div className="bg-white rounded-xl border border-highlight overflow-hidden shadow-sm">
@@ -3495,10 +3495,10 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
                       <table className="w-full text-left border-collapse">
                          <thead className="bg-paper border-b border-highlight">
                             <tr>
-                               <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest">Date</th>
-                               <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest">Student Info</th>
-                               <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest">Status</th>
-                               <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest text-right">Actions</th>
+                               <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest">신청일</th>
+                               <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest">회원 정보</th>
+                               <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest">상태</th>
+                               <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest text-right">처리</th>
                             </tr>
                          </thead>
                          <tbody className="divide-y divide-highlight">
@@ -3535,14 +3535,14 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
                                           <button 
                                             onClick={() => handleApprove(req.id, false)}
                                             className="px-2 py-1 md:px-3 md:py-1.5 border border-highlight text-red-500 rounded-lg font-black hover:bg-red-50 transition-all uppercase tracking-widest"
-                                          >REFUSE</button>
+                                          >반려</button>
                                           <button 
                                             onClick={() => handleApprove(req.id, true)}
                                             className="px-2 py-1 md:px-3 md:py-1.5 bg-accent text-white rounded-lg font-black hover:bg-sidebar transition-all uppercase tracking-widest"
-                                          >APPROVE</button>
+                                          >승인</button>
                                        </div>
                                      ) : (
-                                       <span className="text-[10px] text-gray-300 font-bold italic">PROCESSED</span>
+                                       <span className="text-[10px] text-gray-300 font-bold italic">처리 완료</span>
                                      )}
                                   </td>
                                </tr>
@@ -3556,7 +3556,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
             <Route path="analysis" element={<SecureTeacherAnalysis profile={profile} />} />
             <Route path="analysis/:studentId" element={<SecureTeacherAnalysis profile={profile} />} />
             <Route path="chat" element={<div id="teacher-chat-area" className="h-full"><TeacherChat profile={profile} session={session} /></div>} />
-            <Route path="class" element={<div className="p-8 font-black text-2xl text-ink uppercase">Class Management Coming Soon...</div>} />
+            <Route path="class" element={<div className="p-8 font-black text-2xl text-ink uppercase">학급 관리 기능 준비 중...</div>} />
             <Route path="curriculum" element={<TeacherCurriculum />} />
             <Route path="resources" element={<TeacherResource />} />
             <Route path="settings" element={<div className="p-8 font-black text-2xl text-ink">교사 설정 준비 중...</div>} />
@@ -4500,10 +4500,10 @@ const SecureTeacherAnalysis = ({ profile }: { profile: UserProfile | null }) => 
       <div className="min-h-[500px] overflow-hidden rounded-2xl border border-highlight bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-highlight p-5">
           <div>
-            <h3 className="text-sm font-black uppercase tracking-widest text-ink">Sessions</h3>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-secondary-text">{selectedStudent ? `${selectedStudent.name} / ${getClassLabel(selectedStudent)}` : "Select a student"}</p>
+            <h3 className="text-sm font-black uppercase tracking-widest text-ink">학습 세션</h3>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-secondary-text">{selectedStudent ? `${selectedStudent.name} / ${getClassLabel(selectedStudent)}` : "학생을 선택하세요"}</p>
           </div>
-          <button onClick={openInstructionModal} disabled={!selectedStudent} className="rounded-xl bg-accent px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50">Guidance</button>
+          <button onClick={openInstructionModal} disabled={!selectedStudent} className="rounded-xl bg-accent px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50">개별 지침</button>
         </div>
         <div className="divide-y divide-highlight overflow-y-auto">
           {sessions.map((sessionItem) => (
@@ -4518,41 +4518,41 @@ const SecureTeacherAnalysis = ({ profile }: { profile: UserProfile | null }) => 
         <div className="flex h-16 items-center justify-between border-b border-highlight px-6">
           <div className="flex h-full gap-6">
             {(["report", "chat", "history"] as const).map((tab) => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={cn("h-full border-b-2 px-1 text-[11px] font-black uppercase tracking-widest transition-all", activeTab === tab ? "border-accent text-accent" : "border-transparent text-secondary-text")}>{tab}</button>
+              <button key={tab} onClick={() => setActiveTab(tab)} className={cn("h-full border-b-2 px-1 text-[11px] font-black uppercase tracking-widest transition-all", activeTab === tab ? "border-accent text-accent" : "border-transparent text-secondary-text")}>{tab === "report" ? "보고서" : tab === "chat" ? "대화 기록" : "학습 이력"}</button>
             ))}
           </div>
-          <button onClick={fetchStudents} className="text-xs font-black text-accent">Refresh</button>
+          <button onClick={fetchStudents} className="text-xs font-black text-accent">새로고침</button>
         </div>
         <div className="flex-1 overflow-y-auto p-6">
           {!selectedStudent ? (
-            <div className="flex h-full items-center justify-center text-sm font-bold text-gray-400">Select a student to review progress.</div>
+            <div className="flex h-full items-center justify-center text-sm font-bold text-gray-400">진행 상황을 보려면 학생을 선택하세요.</div>
           ) : activeTab !== "history" && !selectedSession ? (
-            <div className="flex h-full items-center justify-center text-sm font-bold text-gray-400">Select a session to inspect the report or the raw conversation.</div>
+            <div className="flex h-full items-center justify-center text-sm font-bold text-gray-400">보고서나 원본 대화를 보려면 세션을 선택하세요.</div>
           ) : activeTab === "report" ? (
             report ? (
               <div className="space-y-6">
-                <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">Summary</p><p className="text-sm font-semibold leading-relaxed text-ink">{report.summary}</p></div>
-                <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">Misconceptions</p><p className="text-sm font-semibold leading-relaxed text-ink">{report.misconceptions}</p></div>
-                <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">Recommendations</p><p className="text-sm font-semibold leading-relaxed text-ink">{report.recommendations}</p></div>
+                <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">학습 요약</p><p className="text-sm font-semibold leading-relaxed text-ink">{report.summary}</p></div>
+                <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">오개념 및 막힌 지점</p><p className="text-sm font-semibold leading-relaxed text-ink">{report.misconceptions}</p></div>
+                <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">추천 개입</p><p className="text-sm font-semibold leading-relaxed text-ink">{report.recommendations}</p></div>
               </div>
-            ) : <div className="flex h-full items-center justify-center text-sm font-bold text-gray-400">No generated report exists for this session yet.</div>
+            ) : <div className="flex h-full items-center justify-center text-sm font-bold text-gray-400">이 세션에는 아직 생성된 보고서가 없습니다.</div>
           ) : activeTab === "chat" ? (
             <div className="space-y-4">
               {messages.map((message) => (
                 <div key={message.id} className={cn("max-w-[90%] rounded-2xl px-4 py-3", message.role === "user" ? "ml-auto bg-sidebar text-white" : "border border-highlight bg-paper text-ink")}>
-                  <p className="mb-2 text-[10px] font-black uppercase tracking-widest opacity-60">{message.role}</p>
+                  <p className="mb-2 text-[10px] font-black uppercase tracking-widest opacity-60">{message.role === "user" ? "학생" : "AI 튜터"}</p>
                   <div className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</div>
                 </div>
               ))}
             </div>
           ) : archiveLoading ? (
-            <div className="flex h-full items-center justify-center text-sm font-bold text-gray-400">Loading archived learning history.</div>
+            <div className="flex h-full items-center justify-center text-sm font-bold text-gray-400">학습 이력을 불러오는 중입니다.</div>
           ) : (
             <div className="space-y-6">
-              <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-3 text-[10px] font-black uppercase tracking-widest text-accent">Student archive</p><div className="prose prose-sm max-w-none"><ReactMarkdown>{archiveProfile}</ReactMarkdown></div></div>
-              <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-3 text-[10px] font-black uppercase tracking-widest text-accent">Learning timeline</p><div className="prose prose-sm max-w-none"><ReactMarkdown>{archiveTimeline}</ReactMarkdown></div></div>
+              <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-3 text-[10px] font-black uppercase tracking-widest text-accent">학생 아카이브</p><div className="prose prose-sm max-w-none"><ReactMarkdown>{archiveProfile}</ReactMarkdown></div></div>
+              <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-3 text-[10px] font-black uppercase tracking-widest text-accent">학습 타임라인</p><div className="prose prose-sm max-w-none"><ReactMarkdown>{archiveTimeline}</ReactMarkdown></div></div>
               <div className="rounded-2xl border border-highlight bg-paper p-5">
-                <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-accent">Session documents</p>
+                <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-accent">세션 문서</p>
                 {archiveSessions.length > 0 ? (
                   <div className="space-y-3">
                     <div className="flex flex-wrap gap-2">
@@ -4562,7 +4562,7 @@ const SecureTeacherAnalysis = ({ profile }: { profile: UserProfile | null }) => 
                     </div>
                     {expandedArchiveSession && <div className="rounded-2xl border border-highlight bg-white p-4"><div className="prose prose-sm max-w-none"><ReactMarkdown>{expandedSessionContent}</ReactMarkdown></div></div>}
                   </div>
-                ) : <p className="text-sm font-semibold text-gray-400">No archived session documents exist yet.</p>}
+                ) : <p className="text-sm font-semibold text-gray-400">아직 저장된 세션 문서가 없습니다.</p>}
               </div>
             </div>
           )}
@@ -4574,20 +4574,20 @@ const SecureTeacherAnalysis = ({ profile }: { profile: UserProfile | null }) => 
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="w-full max-w-3xl overflow-hidden rounded-3xl border border-highlight bg-white shadow-2xl">
               <div className="flex items-center justify-between border-b border-highlight px-8 py-6">
                 <div>
-                  <h3 className="text-xl font-black uppercase tracking-tight text-ink">Student guidance</h3>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-secondary-text">Saved only for {selectedStudent?.name}</p>
+                  <h3 className="text-xl font-black uppercase tracking-tight text-ink">학생 개별 지침</h3>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-secondary-text">{selectedStudent?.name} 학생에게만 적용됩니다</p>
                 </div>
                 <button onClick={() => setShowInstructionModal(false)} className="rounded-full p-2 transition-colors hover:bg-paper"><X size={20} /></button>
               </div>
               <div className="max-h-[70vh] space-y-4 overflow-y-auto p-8">
                 {[
-                  ["weeklyGoals", "Weekly goals"],
-                  ["keyConcepts", "Key concepts"],
-                  ["solvingGuideline", "Solving guideline"],
-                  ["difficultyLevel", "Difficulty level"],
-                  ["feedbackStyle", "Feedback style"],
-                  ["aiMisconceptionResponse", "Misconception response"],
-                  ["aiEngagementStrategy", "Engagement strategy"],
+                  ["weeklyGoals", "주간 학습 목표"],
+                  ["keyConcepts", "핵심 개념"],
+                  ["solvingGuideline", "풀이 지침"],
+                  ["difficultyLevel", "난이도 기준"],
+                  ["feedbackStyle", "피드백 방식"],
+                  ["aiMisconceptionResponse", "오개념 대응 방식"],
+                  ["aiEngagementStrategy", "학생 참여 유도 전략"],
                 ].map(([field, label]) => (
                   <div key={field} className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-secondary-text">{label}</label>
@@ -4595,16 +4595,16 @@ const SecureTeacherAnalysis = ({ profile }: { profile: UserProfile | null }) => 
                   </div>
                 ))}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-secondary-text">Question style</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-secondary-text">질문 방식</label>
                   <select value={tempInstructions.aiQuestionStyle} onChange={(e) => setTempInstructions({ ...tempInstructions, aiQuestionStyle: e.target.value as "inductive" | "direct" })} className="w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none">
-                    <option value="inductive">Inductive</option>
-                    <option value="direct">Direct</option>
+                    <option value="inductive">유도형</option>
+                    <option value="direct">직접형</option>
                   </select>
                 </div>
               </div>
               <div className="flex justify-end gap-3 border-t border-highlight px-8 py-6">
-                <button onClick={() => setShowInstructionModal(false)} className="rounded-xl border border-highlight px-5 py-3 text-xs font-black text-secondary-text">Cancel</button>
-                <button onClick={handleApplyStudentInstructions} disabled={saving} className="rounded-xl bg-accent px-5 py-3 text-xs font-black text-white disabled:opacity-50">{saving ? "Saving..." : "Save guidance"}</button>
+                <button onClick={() => setShowInstructionModal(false)} className="rounded-xl border border-highlight px-5 py-3 text-xs font-black text-secondary-text">취소</button>
+                <button onClick={handleApplyStudentInstructions} disabled={saving} className="rounded-xl bg-accent px-5 py-3 text-xs font-black text-white disabled:opacity-50">{saving ? "저장 중..." : "지침 저장"}</button>
               </div>
             </motion.div>
           </div>
@@ -4717,6 +4717,7 @@ export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
   const [loading, setLoading] = useState(true);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   const toggleTheme = () => {
     const newTheme = theme === "light" ? "dark" : "light";
@@ -4790,6 +4791,14 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!profile || profile.status !== "approved") return;
+    const tutorialKey = `MATH_TUTOR_TUTORIAL_SEEN_${profile.role}`;
+    if (!localStorage.getItem(tutorialKey)) {
+      setShowTutorial(true);
+    }
+  }, [profile]);
+
   const handleLogout = async () => {
     localStorage.removeItem("ACTIVE_SESSION_ID");
     await supabase.auth.signOut();
@@ -4814,19 +4823,28 @@ export default function App() {
   }
 
   if (!profile) {
-    return <AccountStatusScreen title="Profile Error" body="사용자 프로필을 불러오지 못했습니다. 다시 로그인해 주세요." onLogout={handleLogout} />;
+    return <AccountStatusScreen title="프로필 오류" body="사용자 프로필을 불러오지 못했습니다. 다시 로그인해 주세요." onLogout={handleLogout} />;
   }
 
   if (profile.status === "pending") {
-    return <AccountStatusScreen title="Pending Approval" body="가입 신청이 접수되었습니다. 관리자 승인 후 이용할 수 있습니다." onLogout={handleLogout} />;
+    return <AccountStatusScreen title="승인 대기 중" body="가입 신청이 접수되었습니다. 관리자 승인 후 이용할 수 있습니다." onLogout={handleLogout} />;
   }
 
   if (profile.status === "rejected") {
-    return <AccountStatusScreen title="Rejected" body="가입 신청이 반려되었습니다. 관리자에게 문의해 주세요." onLogout={handleLogout} />;
+    return <AccountStatusScreen title="승인 반려" body="가입 신청이 반려되었습니다. 관리자에게 문의해 주세요." onLogout={handleLogout} />;
   }
 
   return (
     <div className={cn("min-h-screen transition-colors duration-300")}>
+      {showTutorial && (
+        <OnboardingTutorial
+          role={profile.role}
+          onComplete={() => {
+            localStorage.setItem(`MATH_TUTOR_TUTORIAL_SEEN_${profile.role}`, "true");
+            setShowTutorial(false);
+          }}
+        />
+      )}
       <div className="fixed top-4 right-10 z-[100] flex gap-2 items-center">
         <button onClick={handleLogout} className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-gray-200 dark:border-gray-700 text-xs font-black shadow-2xl hover:bg-red-50 hover:text-red-500 transition-all flex items-center gap-2">
           <LogOut size={14} /> 로그아웃
