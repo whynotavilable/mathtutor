@@ -57,6 +57,10 @@ const ai = new GoogleGenAI({
     || ''
 });
 
+const GEMINI_TEXT_MODEL =
+  (import.meta as any).env.VITE_GEMINI_MODEL
+  || "gemini-2.5-flash";
+
 // --- Types for Supabase ---
 interface UserProfile {
   id: string;
@@ -256,10 +260,15 @@ const buildStudentSystemInstruction = (
 
 const buildTeacherAssistantInstruction = (profile: UserProfile | null) =>
   [
-    "You are an AI pedagogical assistant for a math teacher.",
-    "Help the teacher interpret student learning data, identify misconceptions, propose intervention plans, and draft precise teaching guidance.",
-    "Respond in Korean.",
-    "Prefer actionable bullets and tie suggestions to observable evidence from the student's chat history or report.",
+    "You are an AI pedagogical assistant for a Korean math teacher.",
+    "Respond only in Korean.",
+    "Your job is to help the teacher interpret student evidence, identify misconceptions, propose intervention plans, and draft precise classroom guidance.",
+    "Never invent student facts, reports, scores, or conversation details that were not provided in the prompt or prior messages.",
+    "If the teacher asks for a report but there is not enough evidence, say clearly what evidence is missing and provide a fill-in-ready report template instead of guessing.",
+    "When evidence is available, ground every claim in that evidence and separate observation from inference.",
+    "Prefer concise, actionable bullets.",
+    "When writing a teacher-facing report, use this structure unless the teacher requests another format: 1. 학습 요약 2. 관찰 근거 3. 오개념/막힌 지점 4. 다음 수업 개입 전략 5. 교사 피드백 문구 예시.",
+    "If a request is vague, ask at most one short clarifying question before proceeding.",
     profile?.name ? `Current teacher: ${profile.name}.` : "",
   ]
     .filter(Boolean)
@@ -876,7 +885,7 @@ const StudentChat = ({
       const chatContext = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
       
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: GEMINI_TEXT_MODEL,
         contents: `Analyze the following math study chat history between a student and an AI tutor. Provide a structured learning report in JSON format.
         
 Current Study Goals: ${instructions.currentGoals || 'Not specified'}
@@ -1073,7 +1082,7 @@ Provide the report in JSON following this exact field names:
       }));
 
       const chat = ai.chats.create({
-        model: 'gemini-1.5-flash',
+        model: GEMINI_TEXT_MODEL,
         config: { systemInstruction },
         history,
       });
@@ -4500,7 +4509,7 @@ const SecureTeacherChat = ({ profile }: { profile: UserProfile | null }) => {
         role: message.role === "user" ? "user" : "model",
         parts: [{ text: message.content }],
       }));
-      const chat = ai.chats.create({ model: "gemini-1.5-flash", config: { systemInstruction: buildTeacherAssistantInstruction(profile) }, history });
+      const chat = ai.chats.create({ model: GEMINI_TEXT_MODEL, config: { systemInstruction: buildTeacherAssistantInstruction(profile) }, history });
       const response = await chat.sendMessage({ message: currentInput });
       setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", content: response.text || "응답을 받지 못했습니다.", timestamp: new Date() }]);
     } catch (error: any) {
