@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import { Routes, Route, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
 import { 
   BarChart3, 
@@ -80,6 +80,26 @@ interface LearningReport {
   created_at: string;
 }
 
+interface TeacherInstructionContext {
+  classInstruction?: string;
+  studentInstruction?: string;
+  classSettings?: Partial<TeacherInstructions>;
+  studentSettings?: Partial<TeacherInstructions>;
+  updatedAt?: string;
+  updatedBy?: string;
+  updatedByEmail?: string;
+}
+
+interface ParsedInstructionState {
+  studentSettings: StudentInstructions;
+  teacherContext: TeacherInstructionContext;
+}
+
+interface ArchivedSessionDocument {
+  filename: string;
+  content: string;
+}
+
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Cell
@@ -113,6 +133,257 @@ const UNIT_UNDERSTANDING_DATA = [
   { subject: '미분계수', A: 90, fullMark: 100 },
   { subject: '도함수', A: 75, fullMark: 100 },
 ];
+
+const ADMIN_EMAIL = "shsla61@gmail.com";
+
+const DEFAULT_STUDENT_INSTRUCTIONS: StudentInstructions = {
+  currentGoals: "",
+  preferredStyle: "",
+  difficultConcepts: "",
+  problemSolvingApproach: "intuitive",
+  induceSelfExplanation: true,
+  hintLevel: 2,
+  repeatNeeded: false,
+};
+
+const DEFAULT_TEACHER_INSTRUCTIONS: TeacherInstructions = {
+  weeklyGoals: "",
+  keyConcepts: "",
+  solvingGuideline: "",
+  difficultyLevel: "",
+  feedbackStyle: "",
+  aiQuestionStyle: "inductive",
+  aiMisconceptionResponse: "",
+  aiEngagementStrategy: "",
+};
+
+const isStudentInstructionShape = (value: any): value is StudentInstructions =>
+  value && typeof value === "object" && typeof value.currentGoals === "string" && typeof value.hintLevel === "number";
+
+const parseInstructionState = (raw?: string): ParsedInstructionState => {
+  if (!raw) {
+    return {
+      studentSettings: { ...DEFAULT_STUDENT_INSTRUCTIONS },
+      teacherContext: {},
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+
+    if (parsed?.studentSettings) {
+      return {
+        studentSettings: {
+          ...DEFAULT_STUDENT_INSTRUCTIONS,
+          ...parsed.studentSettings,
+        },
+        teacherContext: parsed.teacherContext || {},
+      };
+    }
+
+    if (isStudentInstructionShape(parsed)) {
+      return {
+        studentSettings: {
+          ...DEFAULT_STUDENT_INSTRUCTIONS,
+          ...parsed,
+        },
+        teacherContext: (parsed as any).teacherContext || {},
+      };
+    }
+  } catch (error) {
+    console.error("Failed to parse instructions:", error);
+  }
+
+  return {
+    studentSettings: { ...DEFAULT_STUDENT_INSTRUCTIONS },
+    teacherContext: {},
+  };
+};
+
+const stringifyInstructionState = (instructionState: ParsedInstructionState) =>
+  JSON.stringify({
+    studentSettings: instructionState.studentSettings,
+    teacherContext: instructionState.teacherContext,
+  });
+
+const buildTeacherPrompt = (settings?: Partial<TeacherInstructions>, note?: string) => {
+  const activeSettings = {
+    ...DEFAULT_TEACHER_INSTRUCTIONS,
+    ...(settings || {}),
+  };
+
+  return [
+    note ? `Instruction note: ${note}` : "",
+    activeSettings.weeklyGoals ? `Weekly goals: ${activeSettings.weeklyGoals}` : "",
+    activeSettings.keyConcepts ? `Key concepts: ${activeSettings.keyConcepts}` : "",
+    activeSettings.solvingGuideline ? `Solving guideline: ${activeSettings.solvingGuideline}` : "",
+    activeSettings.difficultyLevel ? `Difficulty level: ${activeSettings.difficultyLevel}` : "",
+    activeSettings.feedbackStyle ? `Feedback style: ${activeSettings.feedbackStyle}` : "",
+    activeSettings.aiQuestionStyle ? `Question style: ${activeSettings.aiQuestionStyle}` : "",
+    activeSettings.aiMisconceptionResponse ? `How to respond to misconceptions: ${activeSettings.aiMisconceptionResponse}` : "",
+    activeSettings.aiEngagementStrategy ? `Engagement strategy: ${activeSettings.aiEngagementStrategy}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+};
+
+const buildStudentSystemInstruction = (
+  instructions: StudentInstructions,
+  teacherContext: TeacherInstructionContext,
+) => {
+  const teacherSections = [
+    buildTeacherPrompt(teacherContext.classSettings, teacherContext.classInstruction),
+    buildTeacherPrompt(teacherContext.studentSettings, teacherContext.studentInstruction),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  return [
+    "You are a patient Korean math tutor for high school students.",
+    "Always teach step by step, use concise language, and format math with LaTeX.",
+    instructions.currentGoals ? `Student goals: ${instructions.currentGoals}` : "",
+    instructions.preferredStyle ? `Preferred explanation style: ${instructions.preferredStyle}` : "",
+    instructions.difficultConcepts ? `Difficult concepts: ${instructions.difficultConcepts}` : "",
+    `Problem solving approach preference: ${instructions.problemSolvingApproach}.`,
+    `Hint level: ${instructions.hintLevel}.`,
+    instructions.induceSelfExplanation ? "Ask the student to explain their reasoning before revealing the full solution." : "",
+    instructions.repeatNeeded ? "Repeat key ideas and checkpoints when the student seems uncertain." : "",
+    teacherSections ? `Teacher guidance:\n${teacherSections}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+};
+
+const buildTeacherAssistantInstruction = (profile: UserProfile | null) =>
+  [
+    "You are an AI pedagogical assistant for a math teacher.",
+    "Help the teacher interpret student learning data, identify misconceptions, propose intervention plans, and draft precise teaching guidance.",
+    "Respond in Korean.",
+    "Prefer actionable bullets and tie suggestions to observable evidence from the student's chat history or report.",
+    profile?.name ? `Current teacher: ${profile.name}.` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+const isAdminUser = (profile: UserProfile | null) => (profile?.email || "").toLowerCase() === ADMIN_EMAIL;
+
+const getClassKey = (user: Pick<UserProfile, "grade" | "class">) =>
+  user.grade && user.class ? `${user.grade}-${user.class}` : "";
+
+const getClassLabel = (user: Pick<UserProfile, "grade" | "class">) =>
+  user.grade && user.class ? `${user.grade}학년 ${user.class}반` : "미지정";
+
+const sanitizeArchiveSegment = (value?: string) =>
+  (value || "session")
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 40) || "session";
+
+const buildArchiveFilename = (session: { id: string; title?: string; created_at?: string }) => {
+  const datePrefix = session.created_at ? new Date(session.created_at).toISOString().slice(0, 10) : "session";
+  return `${datePrefix}-${sanitizeArchiveSegment(session.title || session.id)}-${session.id.slice(0, 8)}.md`;
+};
+
+const buildArchiveProfileMarkdown = (profile: UserProfile | null) => {
+  if (!profile) return "";
+
+  return [
+    `# ${profile.name} Learning Archive`,
+    "",
+    `- Student ID: ${profile.id}`,
+    `- Email: ${profile.email || "-"}`,
+    `- Class: ${profile.grade && profile.class ? `${profile.grade}학년 ${profile.class}반` : "-"}`,
+    `- Number: ${profile.number || "-"}`,
+    `- Status: ${profile.status}`,
+    "",
+    "This archive is reconstructed from live Supabase learning records.",
+    "- Source tables: users, chat_sessions, chat_messages, reports",
+  ].join("\n");
+};
+
+const buildArchiveTimelineMarkdown = (
+  sessions: Array<{ id: string; title?: string; created_at?: string }>,
+  reportsBySession: Record<string, LearningReport | undefined>,
+) => {
+  if (sessions.length === 0) return "";
+
+  return [
+    "# Learning Timeline",
+    "",
+    ...sessions.flatMap((session) => {
+      const report = reportsBySession[session.id];
+      return [
+        `## ${(session.created_at || "").slice(0, 19)} · ${session.title || "Learning Session"}`,
+        "",
+        `- Session ID: ${session.id}`,
+        `- Summary: ${report?.summary || "No report saved yet."}`,
+        `- Misconceptions: ${report?.misconceptions || "No misconception notes yet."}`,
+        `- Recommendations: ${report?.recommendations || "No recommendation notes yet."}`,
+        `- Session File: ${buildArchiveFilename(session)}`,
+        "",
+      ];
+    }),
+  ]
+    .join("\n")
+    .trim();
+};
+
+const buildSessionArchiveMarkdown = ({
+  profile,
+  session,
+  report,
+  messages,
+  teacherContext,
+}: {
+  profile: UserProfile | null;
+  session: { id: string; title?: string; created_at?: string };
+  report?: LearningReport | null;
+  messages: Message[];
+  teacherContext?: TeacherInstructionContext;
+}) => {
+  const teacherGuidance = [
+    buildTeacherPrompt(teacherContext?.classSettings, teacherContext?.classInstruction),
+    buildTeacherPrompt(teacherContext?.studentSettings, teacherContext?.studentInstruction),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  return [
+    `# ${profile?.name || "Student"} Learning Session`,
+    "",
+    `- Student ID: ${profile?.id || "-"}`,
+    `- Session ID: ${session.id}`,
+    `- Session Date: ${session.created_at || "-"}`,
+    `- Class: ${profile?.grade && profile?.class ? `${profile.grade}학년 ${profile.class}반` : "-"}`,
+    `- Number: ${profile?.number || "-"}`,
+    `- Session Title: ${session.title || "Learning Session"}`,
+    "",
+    "## Teacher Guidance",
+    teacherGuidance || "No explicit teacher guidance saved.",
+    "",
+    "## Report Summary",
+    report?.summary || "No summary.",
+    "",
+    "## Misconceptions",
+    report?.misconceptions || "No misconceptions recorded.",
+    "",
+    "## Recommendations",
+    report?.recommendations || "No recommendations recorded.",
+    "",
+    "## Conversation",
+    ...(messages.length > 0
+      ? messages.flatMap((message) => [
+          `### ${message.role === "assistant" ? "Assistant" : "Student"} · ${
+            message.timestamp instanceof Date ? message.timestamp.toISOString() : String(message.timestamp || "")
+          }`,
+          message.content || "",
+          "",
+        ])
+      : ["No conversation saved.", ""]),
+  ].join("\n");
+};
 
 const ThemeToggle = ({ theme, toggleTheme }: { theme: string; toggleTheme: () => void }) => (
   <button
@@ -409,9 +680,13 @@ const StudentSettings = ({ instructions, setInstructions, profile }: { instructi
     if (!profile) return;
     setSaving(true);
     try {
+      const parsed = parseInstructionState(profile.instructions);
       const { error } = await supabase.from('users')
         .update({
-          instructions: JSON.stringify(instructions)
+          instructions: stringifyInstructionState({
+            studentSettings: instructions,
+            teacherContext: parsed.teacherContext,
+          })
         })
         .eq('id', profile.id);
       
@@ -517,7 +792,17 @@ const StudentSettings = ({ instructions, setInstructions, profile }: { instructi
   );
 };
 
-const StudentChat = ({ instructions, profile, session }: { instructions: StudentInstructions, profile: UserProfile | null, session: any }) => {
+const StudentChat = ({
+  instructions,
+  teacherContext = {},
+  profile,
+  session,
+}: {
+  instructions: StudentInstructions,
+  teacherContext?: TeacherInstructionContext,
+  profile: UserProfile | null,
+  session: any
+}) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(() => localStorage.getItem('ACTIVE_SESSION_ID') || null);
@@ -595,6 +880,9 @@ const StudentChat = ({ instructions, profile, session }: { instructions: Student
         contents: `Analyze the following math study chat history between a student and an AI tutor. Provide a structured learning report in JSON format.
         
 Current Study Goals: ${instructions.currentGoals || 'Not specified'}
+Teacher guidance:
+${buildTeacherPrompt(teacherContext.classSettings, teacherContext.classInstruction) || 'None'}
+${buildTeacherPrompt(teacherContext.studentSettings, teacherContext.studentInstruction) || ''}
 
 Chat History:
 ${chatContext}
@@ -622,16 +910,24 @@ Provide the report in JSON following this exact field names:
       const text = response.text || "{}";
       const reportData = JSON.parse(text);
 
-      const { data, error } = await supabase
+      const { data: existingReport } = await supabase
         .from('reports')
-        .insert({
-          session_id: activeSessionId,
-          summary: reportData.summary || "No summary available.",
-          misconceptions: reportData.misconceptions || "No misconceptions detected.",
-          recommendations: reportData.recommendations || "Keep practicing!"
-        })
-        .select()
-        .single();
+        .select('id')
+        .eq('session_id', activeSessionId)
+        .maybeSingle();
+
+      const reportPayload = {
+        session_id: activeSessionId,
+        summary: reportData.summary || "No summary available.",
+        misconceptions: reportData.misconceptions || "No misconceptions detected.",
+        recommendations: reportData.recommendations || "Keep practicing!"
+      };
+
+      const reportQuery = existingReport
+        ? supabase.from('reports').update(reportPayload).eq('id', existingReport.id)
+        : supabase.from('reports').insert(reportPayload);
+
+      const { data, error } = await reportQuery.select().single();
 
       if (error) throw error;
       setReport(data);
@@ -769,16 +1065,7 @@ Provide the report in JSON following this exact field names:
     } catch {}
 
     try {
-      const teacherRaw = localStorage.getItem('TEACHER_INSTRUCTIONS');
-      const systemInstruction = teacherRaw
-        ? JSON.parse(teacherRaw)[profile.id]?.systemPrompt || `당신은 친절하고 전문적인 수학 AI 튜터입니다.
-학생의 현재 목표: ${instructions.currentGoals}
-어려운 개념: ${instructions.difficultConcepts}
-수식은 반드시 LaTeX($...$) 형식으로 작성하세요.`
-        : `당신은 친절하고 전문적인 수학 AI 튜터입니다.
-학생의 현재 목표: ${instructions.currentGoals}
-어려운 개념: ${instructions.difficultConcepts}
-수식은 반드시 LaTeX($...$) 형식으로 작성하세요.`;
+      const systemInstruction = buildStudentSystemInstruction(instructions, teacherContext);
 
       const history = messages.map(m => ({
         role: m.role === 'user' ? 'user' : 'model',
@@ -1250,16 +1537,13 @@ const StudentView = ({ session, profile, fetchProfile, handleTestLogin, handleLo
   handleLogout: () => Promise<void>
 }) => {
   const location = useLocation();
-  const [instructions, setInstructions] = useState(DUMMY_STUDENT.instructions);
+  const [instructions, setInstructions] = useState<StudentInstructions>({ ...DEFAULT_STUDENT_INSTRUCTIONS });
+  const [teacherContext, setTeacherContext] = useState<TeacherInstructionContext>({});
 
   useEffect(() => {
-    if (profile?.instructions) {
-      try {
-        setInstructions(JSON.parse(profile.instructions));
-      } catch (err) {
-        console.error("Instructions parse error:", err);
-      }
-    }
+    const parsed = parseInstructionState(profile?.instructions);
+    setInstructions(parsed.studentSettings);
+    setTeacherContext(parsed.teacherContext);
   }, [profile]);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -1526,7 +1810,7 @@ const StudentView = ({ session, profile, fetchProfile, handleTestLogin, handleLo
           location.pathname === "/student/settings" ? "overflow-y-auto" : "overflow-hidden"
         )}>
           <Routes>
-            <Route index element={<StudentChat instructions={instructions} profile={profile} session={session} />} />
+            <Route index element={<StudentChat instructions={instructions} teacherContext={teacherContext} profile={profile} session={session} />} />
             <Route path="history" element={<StudentHistory profile={profile} />} />
             <Route path="settings" element={<StudentSettings instructions={instructions} setInstructions={setInstructions} profile={profile} />} />
           </Routes>
@@ -3154,7 +3438,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
 
 // --- Main App ---
 
-export default function App() {
+function LegacyApp() {
   const [theme, setTheme] = useState("light");
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -3518,3 +3802,913 @@ export default function App() {
 const RefreshCcwIcon = ({ size, className }: { size?: number, className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size ?? 24} height={size ?? 24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
 );
+
+const SecureRoleSelection = () => {
+  const [tab, setTab] = useState<"login" | "signup">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [name, setName] = useState("");
+  const [selectedRole, setSelectedRole] = useState<"student" | "teacher">("student");
+  const [grade, setGrade] = useState("");
+  const [classNum, setClassNum] = useState("");
+  const [number, setNumber] = useState("");
+  const [formLoading, setFormLoading] = useState(false);
+
+  const handleLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setFormLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) alert(error.message);
+    setFormLoading(false);
+  };
+
+  const handleSignup = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (password !== passwordConfirm) {
+      alert("비밀번호가 일치하지 않습니다.");
+      return;
+    }
+
+    setFormLoading(true);
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          name,
+          role: selectedRole,
+          grade: selectedRole === "student" ? grade : null,
+          class: selectedRole === "student" ? classNum : null,
+          number: selectedRole === "student" ? number : null,
+        },
+      },
+    });
+
+    if (error) {
+      alert(error.message);
+      setFormLoading(false);
+      return;
+    }
+
+    if (data.user) {
+      const { error: profileError } = await supabase.from("users").upsert({
+        id: data.user.id,
+        email,
+        name,
+        role: selectedRole,
+        status: "pending",
+        grade: selectedRole === "student" ? grade : null,
+        class: selectedRole === "student" ? classNum : null,
+        number: selectedRole === "student" ? number : null,
+        instructions: stringifyInstructionState({
+          studentSettings: { ...DEFAULT_STUDENT_INSTRUCTIONS },
+          teacherContext: {},
+        }),
+      });
+
+      if (profileError) {
+        alert(profileError.message);
+      } else {
+        alert("가입 신청이 완료되었습니다. 관리자 승인 후 로그인할 수 있습니다.");
+        setTab("login");
+      }
+    }
+
+    setFormLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-paper flex items-center justify-center p-4 bg-gradient-to-br from-paper to-highlight/30">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-md w-full bg-white rounded-[40px] border border-highlight shadow-2xl overflow-hidden">
+        <div className="p-8 md:p-10 space-y-8">
+          <div className="text-center space-y-4">
+            <div className="w-16 h-16 bg-accent/10 rounded-3xl flex items-center justify-center mx-auto text-accent shadow-inner border border-accent/20">
+              <Bot size={32} />
+            </div>
+            <div className="space-y-1">
+              <h1 className="text-3xl font-black text-ink uppercase tracking-tight">Math Tutor</h1>
+              <p className="text-[10px] text-secondary-text font-extrabold uppercase tracking-[0.2em] opacity-60">Authentication System</p>
+            </div>
+          </div>
+
+          <div className="flex gap-2 p-1 bg-paper rounded-2xl border border-highlight">
+            <button onClick={() => setTab("login")} className={cn("flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all", tab === "login" ? "bg-white text-accent shadow-sm border border-highlight" : "text-gray-400 hover:text-ink")}>로그인</button>
+            <button onClick={() => setTab("signup")} className={cn("flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all", tab === "signup" ? "bg-white text-accent shadow-sm border border-highlight" : "text-gray-400 hover:text-ink")}>회원가입</button>
+          </div>
+
+          <form onSubmit={tab === "login" ? handleLogin : handleSignup} className="space-y-4">
+            {tab === "signup" && (
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-5 py-4 bg-paper border border-highlight rounded-2xl text-sm font-semibold text-ink outline-none focus:ring-2 focus:ring-accent/20 transition-all" placeholder="이름" required />
+            )}
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-5 py-4 bg-paper border border-highlight rounded-2xl text-sm font-semibold text-ink outline-none focus:ring-2 focus:ring-accent/20 transition-all" placeholder="example@email.com" required />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-5 py-4 bg-paper border border-highlight rounded-2xl text-sm font-semibold text-ink outline-none focus:ring-2 focus:ring-accent/20 transition-all" placeholder="비밀번호" required />
+
+            {tab === "signup" && (
+              <>
+                <input type="password" value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)} className="w-full px-5 py-4 bg-paper border border-highlight rounded-2xl text-sm font-semibold text-ink outline-none focus:ring-2 focus:ring-accent/20 transition-all" placeholder="비밀번호 확인" required />
+                <div className="grid grid-cols-2 gap-2 p-1 bg-paper rounded-2xl border border-highlight">
+                  <button type="button" onClick={() => setSelectedRole("student")} className={cn("py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all", selectedRole === "student" ? "bg-white text-accent shadow-sm border border-highlight" : "text-gray-400")}>학생</button>
+                  <button type="button" onClick={() => setSelectedRole("teacher")} className={cn("py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all", selectedRole === "teacher" ? "bg-sidebar text-white shadow-sm" : "text-gray-400")}>교사</button>
+                </div>
+
+                {selectedRole === "student" && (
+                  <div className="grid grid-cols-3 gap-3">
+                    <input type="text" value={grade} onChange={(e) => setGrade(e.target.value)} className="w-full px-4 py-4 bg-paper border border-highlight rounded-2xl text-sm font-semibold text-ink text-center outline-none focus:ring-2 focus:ring-accent/20 transition-all" placeholder="학년" required />
+                    <input type="text" value={classNum} onChange={(e) => setClassNum(e.target.value)} className="w-full px-4 py-4 bg-paper border border-highlight rounded-2xl text-sm font-semibold text-ink text-center outline-none focus:ring-2 focus:ring-accent/20 transition-all" placeholder="반" required />
+                    <input type="text" value={number} onChange={(e) => setNumber(e.target.value)} className="w-full px-4 py-4 bg-paper border border-highlight rounded-2xl text-sm font-semibold text-ink text-center outline-none focus:ring-2 focus:ring-accent/20 transition-all" placeholder="번호" required />
+                  </div>
+                )}
+              </>
+            )}
+
+            <button type="submit" disabled={formLoading} className="w-full py-5 bg-ink text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-accent transition-all shadow-xl shadow-ink/10 flex items-center justify-center gap-2 group disabled:opacity-50">
+              {formLoading ? <RefreshCcw className="animate-spin" size={18} /> : tab === "login" ? "로그인" : "회원가입"}
+              <ChevronRight className="group-hover:translate-x-1 transition-transform" size={18} />
+            </button>
+          </form>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+const AccountStatusScreen = ({ title, body, onLogout }: { title: string; body: string; onLogout: () => Promise<void> }) => (
+  <div className="min-h-screen bg-paper flex items-center justify-center p-4">
+    <div className="max-w-md w-full bg-white rounded-3xl border border-highlight shadow-xl p-10 text-center space-y-5">
+      <ShieldCheck size={40} className="mx-auto text-accent" />
+      <h1 className="text-2xl font-black text-ink uppercase tracking-tight">{title}</h1>
+      <p className="text-sm text-secondary-text font-semibold leading-relaxed">{body}</p>
+      <div className="flex justify-center gap-3">
+        <button onClick={onLogout} className="px-5 py-3 rounded-2xl bg-ink text-white text-xs font-black uppercase tracking-widest">로그아웃</button>
+      </div>
+    </div>
+  </div>
+);
+
+const AdminApprovalPanel = () => {
+  const [requests, setRequests] = useState<UserProfile[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchRequests = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.from("users").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      setRequests(data || []);
+    } catch (error) {
+      console.error("Failed to fetch approval requests:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRequests();
+  }, []);
+
+  const handleApprove = async (id: string, nextStatus: "approved" | "rejected") => {
+    const { error } = await supabase.from("users").update({ status: nextStatus }).eq("id", id);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    await fetchRequests();
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-black text-ink uppercase tracking-tighter">Enrollment Approvals</h2>
+          <p className="text-xs text-secondary-text font-bold uppercase tracking-widest">관리자 전용 승인 화면</p>
+        </div>
+        <button onClick={fetchRequests} className="px-4 py-2 rounded-xl border border-highlight text-xs font-black text-ink hover:bg-paper transition-all">새로고침</button>
+      </div>
+      <div className="bg-white rounded-xl border border-highlight overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-paper border-b border-highlight">
+              <tr>
+                <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest">이름</th>
+                <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest">이메일</th>
+                <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest">역할</th>
+                <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest">학급</th>
+                <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest">상태</th>
+                <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest text-right">처리</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-highlight">
+              {loading ? (
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-sm font-bold text-gray-400">불러오는 중...</td></tr>
+              ) : requests.length === 0 ? (
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-sm font-bold text-gray-400">가입 요청이 없습니다.</td></tr>
+              ) : requests.map((request) => (
+                <tr key={request.id}>
+                  <td className="px-6 py-4 text-sm font-black text-ink">{request.name}</td>
+                  <td className="px-6 py-4 text-xs font-semibold text-secondary-text">{request.email}</td>
+                  <td className="px-6 py-4 text-xs font-bold uppercase">{request.role}</td>
+                  <td className="px-6 py-4 text-xs font-bold text-secondary-text">{request.role === "student" ? getClassLabel(request) : "-"}</td>
+                  <td className="px-6 py-4 text-xs font-bold uppercase">{request.status}</td>
+                  <td className="px-6 py-4 text-right">
+                    {request.status === "pending" ? (
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => handleApprove(request.id, "rejected")} className="px-3 py-1.5 rounded-lg border border-highlight text-xs font-black text-red-500 hover:bg-red-50 transition-all">거절</button>
+                        <button onClick={() => handleApprove(request.id, "approved")} className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-black hover:bg-sidebar transition-all">승인</button>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-gray-400 font-bold">처리 완료</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const SecureTeacherDashboard = ({ profile }: { profile: UserProfile | null }) => {
+  const [students, setStudents] = useState<UserProfile[]>([]);
+  const [showClassInstructions, setShowClassInstructions] = useState(false);
+  const [selectedClassKey, setSelectedClassKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [classInstructions, setClassInstructions] = useState<TeacherInstructions>({ ...DEFAULT_TEACHER_INSTRUCTIONS });
+
+  const fetchStudents = async () => {
+    const { data, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("role", "student")
+      .eq("status", "approved")
+      .order("grade", { ascending: true })
+      .order("class", { ascending: true })
+      .order("number", { ascending: true });
+    if (error) {
+      console.error("Failed to fetch students:", error);
+      return;
+    }
+    setStudents(data || []);
+  };
+
+  useEffect(() => {
+    fetchStudents();
+  }, []);
+
+  const classOptions = Array.from(new Set(students.map((student) => getClassKey(student)).filter(Boolean))).map((key) => {
+    const target = students.find((student) => getClassKey(student) === key)!;
+    return { key, label: getClassLabel(target) };
+  });
+
+  const handleApplyClassInstructions = async () => {
+    if (!selectedClassKey) return;
+    setSaving(true);
+    try {
+      const targetStudents = students.filter((student) => getClassKey(student) === selectedClassKey);
+      for (const student of targetStudents) {
+        const parsed = parseInstructionState(student.instructions);
+        const { error } = await supabase.from("users").update({
+          instructions: stringifyInstructionState({
+            studentSettings: parsed.studentSettings,
+            teacherContext: {
+              ...parsed.teacherContext,
+              classSettings: classInstructions,
+              classInstruction: `${selectedClassKey} class guidance`,
+              updatedAt: new Date().toISOString(),
+              updatedBy: profile?.name,
+              updatedByEmail: profile?.email,
+            },
+          }),
+        }).eq("id", student.id);
+        if (error) throw error;
+      }
+      setShowClassInstructions(false);
+      await fetchStudents();
+    } catch (error: any) {
+      alert(error.message || "학급 지침 저장에 실패했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        <div className="bg-white border border-highlight rounded-2xl p-6"><p className="text-xs font-bold text-secondary-text uppercase tracking-widest">승인 학생</p><p className="text-3xl font-black text-ink mt-2">{students.length}</p></div>
+        <div className="bg-white border border-highlight rounded-2xl p-6"><p className="text-xs font-bold text-secondary-text uppercase tracking-widest">관리자</p><p className="text-lg font-black text-ink mt-2">{isAdminUser(profile) ? "활성" : "일반 교사"}</p></div>
+        <div className="bg-white border border-highlight rounded-2xl p-6"><button onClick={() => setShowClassInstructions(true)} className="w-full h-full text-left"><p className="text-xs font-bold text-secondary-text uppercase tracking-widest">학급 지침</p><p className="text-lg font-black text-accent mt-2">학급별 공통 지침 적용</p></button></div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-highlight overflow-hidden shadow-sm">
+        <div className="p-5 border-b border-highlight flex items-center justify-between">
+          <h3 className="text-sm font-black uppercase tracking-widest text-ink">학생 목록</h3>
+          <button onClick={fetchStudents} className="text-xs font-black text-accent">새로고침</button>
+        </div>
+        <div className="divide-y divide-highlight">
+          {students.map((student) => (
+            <div key={student.id} className="px-5 py-4 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-black text-ink">{student.name}</p>
+                <p className="text-[10px] font-bold text-secondary-text">{getClassLabel(student)} / {student.number || "-"}번 / {student.email}</p>
+              </div>
+              <Link to={`/teacher/analysis/${student.id}`} className="text-xs font-black text-accent uppercase tracking-widest">분석 보기</Link>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {showClassInstructions && (
+          <div className="fixed inset-0 z-[220] flex items-center justify-center p-6 bg-sidebar/60 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="w-full max-w-3xl bg-white rounded-3xl border border-highlight shadow-2xl overflow-hidden">
+              <div className="px-8 py-6 border-b border-highlight flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-black text-ink uppercase tracking-tight">학급 공통 지침</h3>
+                  <p className="text-[10px] font-bold text-secondary-text uppercase tracking-widest">선택한 학급 학생 전체에 적용</p>
+                </div>
+                <button onClick={() => setShowClassInstructions(false)} className="p-2 hover:bg-paper rounded-full transition-colors"><X size={20} /></button>
+              </div>
+              <div className="p-8 space-y-4 max-h-[70vh] overflow-y-auto">
+                <select value={selectedClassKey} onChange={(e) => setSelectedClassKey(e.target.value)} className="w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none">
+                  <option value="">학급 선택</option>
+                  {classOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+                </select>
+                {[
+                  ["weeklyGoals", "주간 목표"],
+                  ["keyConcepts", "핵심 개념"],
+                  ["solvingGuideline", "풀이 지침"],
+                  ["difficultyLevel", "난이도"],
+                  ["feedbackStyle", "피드백 방식"],
+                  ["aiMisconceptionResponse", "오개념 대응"],
+                  ["aiEngagementStrategy", "참여 유도"],
+                ].map(([field, label]) => (
+                  <div key={field} className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-secondary-text">{label}</label>
+                    <textarea value={(classInstructions as any)[field] || ""} onChange={(e) => setClassInstructions({ ...classInstructions, [field]: e.target.value })} className="w-full h-20 resize-none rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none" />
+                  </div>
+                ))}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-secondary-text">질문 방식</label>
+                  <select value={classInstructions.aiQuestionStyle} onChange={(e) => setClassInstructions({ ...classInstructions, aiQuestionStyle: e.target.value as "inductive" | "direct" })} className="w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none">
+                    <option value="inductive">유도형</option>
+                    <option value="direct">직접형</option>
+                  </select>
+                </div>
+              </div>
+              <div className="px-8 py-6 border-t border-highlight flex justify-end gap-3">
+                <button onClick={() => setShowClassInstructions(false)} className="px-5 py-3 border border-highlight rounded-xl text-xs font-black text-secondary-text">취소</button>
+                <button onClick={handleApplyClassInstructions} disabled={saving || !selectedClassKey} className="px-5 py-3 bg-accent text-white rounded-xl text-xs font-black disabled:opacity-50">{saving ? "저장 중..." : "전체 적용"}</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+const SecureTeacherAnalysis = ({ profile }: { profile: UserProfile | null }) => {
+  const location = useLocation();
+  const selectedStudentIdFromRoute = location.pathname.split("/").pop();
+  const [students, setStudents] = useState<UserProfile[]>([]);
+  const [selectedStudent, setSelectedStudent] = useState<UserProfile | null>(null);
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [selectedSession, setSelectedSession] = useState<any | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [report, setReport] = useState<LearningReport | null>(null);
+  const [activeTab, setActiveTab] = useState<"report" | "chat" | "history">("report");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [classFilter, setClassFilter] = useState("");
+  const [showInstructionModal, setShowInstructionModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [tempInstructions, setTempInstructions] = useState<TeacherInstructions>({ ...DEFAULT_TEACHER_INSTRUCTIONS });
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [archiveProfile, setArchiveProfile] = useState("");
+  const [archiveTimeline, setArchiveTimeline] = useState("");
+  const [archiveSessions, setArchiveSessions] = useState<ArchivedSessionDocument[]>([]);
+  const [expandedArchiveSession, setExpandedArchiveSession] = useState<string | null>(null);
+
+  const fetchStudents = async () => {
+    const { data, error } = await supabase.from("users").select("*").eq("role", "student").eq("status", "approved").order("grade", { ascending: true }).order("class", { ascending: true }).order("number", { ascending: true });
+    if (error) {
+      console.error("Failed to fetch students:", error);
+      return;
+    }
+    const nextStudents = data || [];
+    setStudents(nextStudents);
+    setSelectedStudent((current) => {
+      if (selectedStudentIdFromRoute && nextStudents.some((student) => student.id === selectedStudentIdFromRoute)) {
+        return nextStudents.find((student) => student.id === selectedStudentIdFromRoute) || null;
+      }
+      if (!current) return nextStudents[0] || null;
+      return nextStudents.find((student) => student.id === current.id) || nextStudents[0] || null;
+    });
+  };
+
+  const fetchSessions = async (studentId: string) => {
+    const { data, error } = await supabase.from("chat_sessions").select("*").eq("user_id", studentId).order("created_at", { ascending: false });
+    if (error) {
+      console.error("Failed to fetch sessions:", error);
+      return;
+    }
+    const nextSessions = data || [];
+    setSessions(nextSessions);
+    setSelectedSession((current) => nextSessions.find((session) => session.id === current?.id) || nextSessions[0] || null);
+  };
+
+  const fetchSessionDetails = async (sessionId: string) => {
+    const [{ data: messageData, error: messageError }, { data: reportData, error: reportError }] = await Promise.all([
+      supabase.from("chat_messages").select("*").eq("session_id", sessionId).order("created_at", { ascending: true }),
+      supabase.from("reports").select("*").eq("session_id", sessionId).maybeSingle(),
+    ]);
+    if (messageError) console.error("Failed to fetch session messages:", messageError);
+    if (reportError && reportError.code !== "PGRST116") console.error("Failed to fetch report:", reportError);
+    setMessages((messageData || []).map((message) => ({ id: message.id, role: message.role, content: message.content, timestamp: new Date(message.created_at) })));
+    setReport(reportData || null);
+  };
+
+  const fetchArchive = async (student: UserProfile) => {
+    setArchiveLoading(true);
+    try {
+      const { data: sessionRows, error: sessionError } = await supabase.from("chat_sessions").select("*").eq("user_id", student.id).order("created_at", { ascending: false });
+      if (sessionError) throw sessionError;
+      const nextSessions = sessionRows || [];
+      const sessionIds = nextSessions.map((session) => session.id);
+      let reportRows: LearningReport[] = [];
+      let messageRows: any[] = [];
+      if (sessionIds.length > 0) {
+        const [{ data: fetchedReports, error: reportError }, { data: fetchedMessages, error: messageError }] = await Promise.all([
+          supabase.from("reports").select("*").in("session_id", sessionIds),
+          supabase.from("chat_messages").select("*").in("session_id", sessionIds).order("created_at", { ascending: true }),
+        ]);
+        if (reportError) throw reportError;
+        if (messageError) throw messageError;
+        reportRows = fetchedReports || [];
+        messageRows = fetchedMessages || [];
+      }
+      const reportsBySession = reportRows.reduce<Record<string, LearningReport | undefined>>((acc, currentReport) => {
+        acc[currentReport.session_id] = currentReport;
+        return acc;
+      }, {});
+      const messagesBySession = messageRows.reduce<Record<string, Message[]>>((acc, currentMessage) => {
+        const mappedMessage = { id: currentMessage.id, role: currentMessage.role, content: currentMessage.content, timestamp: new Date(currentMessage.created_at) };
+        acc[currentMessage.session_id] = [...(acc[currentMessage.session_id] || []), mappedMessage];
+        return acc;
+      }, {});
+      const parsed = parseInstructionState(student.instructions);
+      const archiveDocuments = nextSessions.map((session) => ({
+        filename: buildArchiveFilename(session),
+        content: buildSessionArchiveMarkdown({
+          profile: student,
+          session,
+          report: reportsBySession[session.id] || null,
+          messages: messagesBySession[session.id] || [],
+          teacherContext: parsed.teacherContext,
+        }),
+      }));
+      setArchiveProfile(buildArchiveProfileMarkdown(student));
+      setArchiveTimeline(buildArchiveTimelineMarkdown(nextSessions, reportsBySession));
+      setArchiveSessions(archiveDocuments);
+      setExpandedArchiveSession(archiveDocuments[0]?.filename || null);
+    } catch (error) {
+      console.error("Failed to fetch archive:", error);
+      setArchiveProfile("");
+      setArchiveTimeline("");
+      setArchiveSessions([]);
+      setExpandedArchiveSession(null);
+    } finally {
+      setArchiveLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchStudents(); }, []);
+  useEffect(() => {
+    if (!selectedStudent?.id) {
+      setSessions([]);
+      setSelectedSession(null);
+      setArchiveProfile("");
+      setArchiveTimeline("");
+      setArchiveSessions([]);
+      setExpandedArchiveSession(null);
+      return;
+    }
+    fetchSessions(selectedStudent.id);
+    fetchArchive(selectedStudent);
+  }, [selectedStudent?.id]);
+  useEffect(() => { if (selectedSession?.id) fetchSessionDetails(selectedSession.id); else { setMessages([]); setReport(null); } }, [selectedSession?.id]);
+
+  const filteredStudents = students.filter((student) => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const matchesSearch = !normalizedSearch || student.name.toLowerCase().includes(normalizedSearch) || (student.email || "").toLowerCase().includes(normalizedSearch);
+    const matchesClass = !classFilter || getClassKey(student) === classFilter;
+    return matchesSearch && matchesClass;
+  });
+  const classOptions = Array.from(new Set(students.map((student) => getClassKey(student)).filter(Boolean))).map((key) => {
+    const classStudent = students.find((student) => getClassKey(student) === key)!;
+    return { key, label: getClassLabel(classStudent) };
+  });
+
+  const openInstructionModal = () => {
+    if (!selectedStudent) return;
+    const parsed = parseInstructionState(selectedStudent.instructions);
+    setTempInstructions({ ...DEFAULT_TEACHER_INSTRUCTIONS, ...(parsed.teacherContext.studentSettings || {}) });
+    setShowInstructionModal(true);
+  };
+
+  const handleApplyStudentInstructions = async () => {
+    if (!selectedStudent) return;
+    setSaving(true);
+    try {
+      const parsed = parseInstructionState(selectedStudent.instructions);
+      const { error } = await supabase.from("users").update({
+        instructions: stringifyInstructionState({
+          studentSettings: parsed.studentSettings,
+          teacherContext: {
+            ...parsed.teacherContext,
+            studentSettings: tempInstructions,
+            studentInstruction: `${selectedStudent.name} individual guidance`,
+            updatedAt: new Date().toISOString(),
+            updatedBy: profile?.name,
+            updatedByEmail: profile?.email,
+          },
+        }),
+      }).eq("id", selectedStudent.id);
+      if (error) throw error;
+      await fetchStudents();
+      setShowInstructionModal(false);
+    } catch (error: any) {
+      alert(error.message || "Failed to save student guidance.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const expandedSessionContent = archiveSessions.find((sessionFile) => sessionFile.filename === expandedArchiveSession)?.content || "";
+
+  return (
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[280px_320px_minmax(0,1fr)] h-full min-h-0">
+      <div className="min-h-[500px] overflow-hidden rounded-2xl border border-highlight bg-white shadow-sm">
+        <div className="space-y-3 border-b border-highlight p-5">
+          <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search students" className="w-full rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
+          <select value={classFilter} onChange={(e) => setClassFilter(e.target.value)} className="w-full rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none">
+            <option value="">All classes</option>
+            {classOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+          </select>
+        </div>
+        <div className="divide-y divide-highlight overflow-y-auto">
+          {filteredStudents.map((student) => (
+            <button key={student.id} onClick={() => setSelectedStudent(student)} className={cn("w-full px-5 py-4 text-left transition-all hover:bg-paper", selectedStudent?.id === student.id && "bg-paper")}>
+              <p className="text-sm font-black text-ink">{student.name}</p>
+              <p className="text-[10px] font-bold text-secondary-text">{getClassLabel(student)} / {student.number || "-"}번 / {student.email}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="min-h-[500px] overflow-hidden rounded-2xl border border-highlight bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-highlight p-5">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-widest text-ink">Sessions</h3>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-secondary-text">{selectedStudent ? `${selectedStudent.name} / ${getClassLabel(selectedStudent)}` : "Select a student"}</p>
+          </div>
+          <button onClick={openInstructionModal} disabled={!selectedStudent} className="rounded-xl bg-accent px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50">Guidance</button>
+        </div>
+        <div className="divide-y divide-highlight overflow-y-auto">
+          {sessions.map((sessionItem) => (
+            <button key={sessionItem.id} onClick={() => setSelectedSession(sessionItem)} className={cn("w-full px-5 py-4 text-left transition-all hover:bg-paper", selectedSession?.id === sessionItem.id && "bg-paper")}>
+              <p className="text-sm font-black text-ink">{sessionItem.title}</p>
+              <p className="text-[10px] font-bold text-secondary-text">{new Date(sessionItem.created_at).toLocaleString()}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="min-h-[500px] overflow-hidden rounded-2xl border border-highlight bg-white shadow-sm flex flex-col">
+        <div className="flex h-16 items-center justify-between border-b border-highlight px-6">
+          <div className="flex h-full gap-6">
+            {(["report", "chat", "history"] as const).map((tab) => (
+              <button key={tab} onClick={() => setActiveTab(tab)} className={cn("h-full border-b-2 px-1 text-[11px] font-black uppercase tracking-widest transition-all", activeTab === tab ? "border-accent text-accent" : "border-transparent text-secondary-text")}>{tab}</button>
+            ))}
+          </div>
+          <button onClick={fetchStudents} className="text-xs font-black text-accent">Refresh</button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6">
+          {!selectedStudent ? (
+            <div className="flex h-full items-center justify-center text-sm font-bold text-gray-400">Select a student to review progress.</div>
+          ) : activeTab !== "history" && !selectedSession ? (
+            <div className="flex h-full items-center justify-center text-sm font-bold text-gray-400">Select a session to inspect the report or the raw conversation.</div>
+          ) : activeTab === "report" ? (
+            report ? (
+              <div className="space-y-6">
+                <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">Summary</p><p className="text-sm font-semibold leading-relaxed text-ink">{report.summary}</p></div>
+                <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">Misconceptions</p><p className="text-sm font-semibold leading-relaxed text-ink">{report.misconceptions}</p></div>
+                <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">Recommendations</p><p className="text-sm font-semibold leading-relaxed text-ink">{report.recommendations}</p></div>
+              </div>
+            ) : <div className="flex h-full items-center justify-center text-sm font-bold text-gray-400">No generated report exists for this session yet.</div>
+          ) : activeTab === "chat" ? (
+            <div className="space-y-4">
+              {messages.map((message) => (
+                <div key={message.id} className={cn("max-w-[90%] rounded-2xl px-4 py-3", message.role === "user" ? "ml-auto bg-sidebar text-white" : "border border-highlight bg-paper text-ink")}>
+                  <p className="mb-2 text-[10px] font-black uppercase tracking-widest opacity-60">{message.role}</p>
+                  <div className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</div>
+                </div>
+              ))}
+            </div>
+          ) : archiveLoading ? (
+            <div className="flex h-full items-center justify-center text-sm font-bold text-gray-400">Loading archived learning history.</div>
+          ) : (
+            <div className="space-y-6">
+              <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-3 text-[10px] font-black uppercase tracking-widest text-accent">Student archive</p><div className="prose prose-sm max-w-none"><ReactMarkdown>{archiveProfile}</ReactMarkdown></div></div>
+              <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-3 text-[10px] font-black uppercase tracking-widest text-accent">Learning timeline</p><div className="prose prose-sm max-w-none"><ReactMarkdown>{archiveTimeline}</ReactMarkdown></div></div>
+              <div className="rounded-2xl border border-highlight bg-paper p-5">
+                <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-accent">Session documents</p>
+                {archiveSessions.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      {archiveSessions.map((sessionFile) => (
+                        <button key={sessionFile.filename} onClick={() => setExpandedArchiveSession(sessionFile.filename)} className={cn("rounded-xl border px-3 py-2 text-xs font-black transition-all", expandedArchiveSession === sessionFile.filename ? "border-accent bg-accent text-white" : "border-highlight bg-white text-secondary-text")}>{sessionFile.filename}</button>
+                      ))}
+                    </div>
+                    {expandedArchiveSession && <div className="rounded-2xl border border-highlight bg-white p-4"><div className="prose prose-sm max-w-none"><ReactMarkdown>{expandedSessionContent}</ReactMarkdown></div></div>}
+                  </div>
+                ) : <p className="text-sm font-semibold text-gray-400">No archived session documents exist yet.</p>}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      <AnimatePresence>
+        {showInstructionModal && (
+          <div className="fixed inset-0 z-[220] flex items-center justify-center bg-sidebar/60 p-6 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="w-full max-w-3xl overflow-hidden rounded-3xl border border-highlight bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-highlight px-8 py-6">
+                <div>
+                  <h3 className="text-xl font-black uppercase tracking-tight text-ink">Student guidance</h3>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-secondary-text">Saved only for {selectedStudent?.name}</p>
+                </div>
+                <button onClick={() => setShowInstructionModal(false)} className="rounded-full p-2 transition-colors hover:bg-paper"><X size={20} /></button>
+              </div>
+              <div className="max-h-[70vh] space-y-4 overflow-y-auto p-8">
+                {[
+                  ["weeklyGoals", "Weekly goals"],
+                  ["keyConcepts", "Key concepts"],
+                  ["solvingGuideline", "Solving guideline"],
+                  ["difficultyLevel", "Difficulty level"],
+                  ["feedbackStyle", "Feedback style"],
+                  ["aiMisconceptionResponse", "Misconception response"],
+                  ["aiEngagementStrategy", "Engagement strategy"],
+                ].map(([field, label]) => (
+                  <div key={field} className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-secondary-text">{label}</label>
+                    <textarea value={(tempInstructions as any)[field] || ""} onChange={(e) => setTempInstructions({ ...tempInstructions, [field]: e.target.value })} className="h-24 w-full resize-none rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none" />
+                  </div>
+                ))}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-secondary-text">Question style</label>
+                  <select value={tempInstructions.aiQuestionStyle} onChange={(e) => setTempInstructions({ ...tempInstructions, aiQuestionStyle: e.target.value as "inductive" | "direct" })} className="w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none">
+                    <option value="inductive">Inductive</option>
+                    <option value="direct">Direct</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 border-t border-highlight px-8 py-6">
+                <button onClick={() => setShowInstructionModal(false)} className="rounded-xl border border-highlight px-5 py-3 text-xs font-black text-secondary-text">Cancel</button>
+                <button onClick={handleApplyStudentInstructions} disabled={saving} className="rounded-xl bg-accent px-5 py-3 text-xs font-black text-white disabled:opacity-50">{saving ? "Saving..." : "Save guidance"}</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+const SecureTeacherChat = ({ profile }: { profile: UserProfile | null }) => {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSend = async () => {
+    if (!input.trim() || loading) return;
+    const currentInput = input;
+    setInput("");
+    setLoading(true);
+    const nextMessages = [...messages, { id: crypto.randomUUID(), role: "user", content: currentInput, timestamp: new Date() } as Message];
+    setMessages(nextMessages);
+    try {
+      const history = nextMessages.slice(0, -1).map((message) => ({
+        role: message.role === "user" ? "user" : "model",
+        parts: [{ text: message.content }],
+      }));
+      const chat = ai.chats.create({ model: "gemini-1.5-flash", config: { systemInstruction: buildTeacherAssistantInstruction(profile) }, history });
+      const response = await chat.sendMessage({ message: currentInput });
+      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", content: response.text || "응답을 받지 못했습니다.", timestamp: new Date() }]);
+    } catch (error: any) {
+      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", content: `오류: ${error?.message || "AI 연결 실패"}`, timestamp: new Date() }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="h-full flex flex-col bg-white rounded-2xl border border-highlight overflow-hidden">
+      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        {messages.map((message) => (
+          <div key={message.id} className={cn("max-w-[90%] rounded-2xl px-4 py-3", message.role === "user" ? "ml-auto bg-sidebar text-white" : "border border-highlight bg-paper text-ink")}>
+            <div className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</div>
+          </div>
+        ))}
+      </div>
+      <div className="p-4 border-t border-highlight flex gap-3">
+        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleSend(); }} className="flex-1 rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" placeholder="학생 분석, 피드백 문구, 수업 개입 전략 등을 물어보세요" />
+        <button onClick={handleSend} disabled={loading} className="px-5 py-3 rounded-xl bg-accent text-white text-sm font-black disabled:opacity-50">{loading ? "..." : "전송"}</button>
+      </div>
+    </div>
+  );
+};
+
+const SecureTeacherView = ({ session, profile, handleLogout }: { session: any; profile: UserProfile | null; handleLogout: () => Promise<void> }) => {
+  const location = useLocation();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const isAdmin = isAdminUser(profile);
+
+  return (
+    <div className="flex h-screen md:h-[calc(100vh-2rem)] md:rounded-3xl overflow-hidden border border-highlight shadow-sm relative">
+      <AnimatePresence>
+        {isSidebarOpen && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 bg-sidebar/50 backdrop-blur-sm z-40 md:hidden" />}
+      </AnimatePresence>
+      <div className={cn("fixed inset-y-0 left-0 w-64 flex flex-col bg-sidebar text-white py-8 flex-shrink-0 z-50 transform transition-transform duration-300 md:relative md:translate-x-0 md:z-0", isSidebarOpen ? "translate-x-0" : "-translate-x-full")}>
+        <div className="px-6 mb-10 flex justify-between items-center">
+          <h1 className="text-xl font-black tracking-tighter text-gray-100 uppercase">Math Tutor Pro</h1>
+          <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/60 hover:text-white"><X size={20} /></button>
+        </div>
+        <nav className="flex flex-col">
+          <SidebarItem icon={LayoutDashboard} label="대시보드" to="/teacher" active={location.pathname === "/teacher"} onClick={() => setIsSidebarOpen(false)} />
+          <SidebarItem icon={BarChart3} label="학생 분석" to="/teacher/analysis" active={location.pathname.startsWith("/teacher/analysis")} onClick={() => setIsSidebarOpen(false)} />
+          <SidebarItem icon={MessageSquare} label="교사 채팅" to="/teacher/chat" active={location.pathname === "/teacher/chat"} onClick={() => setIsSidebarOpen(false)} />
+          {isAdmin && <SidebarItem icon={ShieldCheck} label="승인 관리" to="/teacher/approvals" active={location.pathname === "/teacher/approvals"} onClick={() => setIsSidebarOpen(false)} />}
+        </nav>
+        <div className="mt-auto px-6 py-4 border-t border-white/10">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center"><CircleUser size={18} /></div>
+            <div className="flex flex-col">
+              <span className="font-bold text-xs">{profile?.name || session?.user?.email?.split("@")[0]} 선생님</span>
+              <span className="text-[10px] text-white/50">{isAdmin ? "관리자" : "교사"}</span>
+            </div>
+          </div>
+          <button onClick={handleLogout} className="w-full flex items-center gap-2 text-xs text-white/50 hover:text-white transition-colors"><LogOut size={12} /> 로그아웃</button>
+        </div>
+      </div>
+      <main className="flex-1 overflow-hidden bg-paper flex flex-col w-full">
+        <header className="h-16 px-4 md:px-8 border-b border-highlight bg-white flex items-center justify-between shrink-0 shadow-sm">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setIsSidebarOpen(true)} className="p-2 md:hidden text-secondary-text hover:text-accent transition-colors"><Menu size={20} /></button>
+            <span className="text-sm font-bold text-accent uppercase tracking-widest">{profile?.name} Teacher Workspace</span>
+          </div>
+        </header>
+        <div className="flex-1 overflow-y-auto p-4 md:p-6">
+          <Routes>
+            <Route index element={<SecureTeacherDashboard profile={profile} />} />
+            <Route path="analysis" element={<SecureTeacherAnalysis profile={profile} />} />
+            <Route path="analysis/:studentId" element={<SecureTeacherAnalysis profile={profile} />} />
+            <Route path="chat" element={<SecureTeacherChat profile={profile} />} />
+            <Route path="approvals" element={isAdmin ? <AdminApprovalPanel /> : <Navigate to="/teacher" replace />} />
+          </Routes>
+        </div>
+      </main>
+    </div>
+  );
+};
+
+export default function App() {
+  const navigate = useNavigate();
+  const [session, setSession] = useState<any>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
+  const [loading, setLoading] = useState(true);
+
+  const toggleTheme = () => {
+    const newTheme = theme === "light" ? "dark" : "light";
+    setTheme(newTheme);
+    localStorage.setItem("theme", newTheme);
+    document.documentElement.classList.toggle("dark", newTheme === "dark");
+  };
+
+  useEffect(() => {
+    document.body.className = theme === "light" ? "bg-paper text-ink" : "bg-[#121212] text-gray-100";
+  }, [theme]);
+
+  const fetchProfile = async (activeSession: any) => {
+    if (!activeSession?.user) {
+      setProfile(null);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      let { data, error } = await supabase.from("users").select("*").eq("id", activeSession.user.id).maybeSingle();
+      if (error && error.code !== "PGRST116") throw error;
+
+      if (!data) {
+        const metadata = activeSession.user.user_metadata || {};
+        const role = metadata.role === "teacher" ? "teacher" : "student";
+        const { data: createdProfile, error: createError } = await supabase.from("users").upsert({
+          id: activeSession.user.id,
+          email: activeSession.user.email,
+          name: metadata.name || metadata.full_name || activeSession.user.email?.split("@")[0],
+          role,
+          status: "pending",
+          grade: role === "student" ? (metadata.grade || null) : null,
+          class: role === "student" ? (metadata.class || null) : null,
+          number: role === "student" ? (metadata.number || null) : null,
+          instructions: stringifyInstructionState({
+            studentSettings: { ...DEFAULT_STUDENT_INSTRUCTIONS },
+            teacherContext: {},
+          }),
+        }).select().single();
+        if (createError) throw createError;
+        data = createdProfile;
+      }
+
+      setProfile(data);
+    } catch (error) {
+      console.error("Profile error:", error);
+      setProfile(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      if (data.session) fetchProfile(data.session);
+      else setLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      if (nextSession) fetchProfile(nextSession);
+      else {
+        setProfile(null);
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    localStorage.removeItem("ACTIVE_SESSION_ID");
+    await supabase.auth.signOut();
+    setSession(null);
+    setProfile(null);
+    navigate("/", { replace: true });
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-paper flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-[10px] font-black text-accent uppercase tracking-widest">Initializing...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <SecureRoleSelection />;
+  }
+
+  if (!profile) {
+    return <AccountStatusScreen title="Profile Error" body="사용자 프로필을 불러오지 못했습니다. 다시 로그인해 주세요." onLogout={handleLogout} />;
+  }
+
+  if (profile.status === "pending") {
+    return <AccountStatusScreen title="Pending Approval" body="가입 신청이 접수되었습니다. 관리자 승인 후 이용할 수 있습니다." onLogout={handleLogout} />;
+  }
+
+  if (profile.status === "rejected") {
+    return <AccountStatusScreen title="Rejected" body="가입 신청이 반려되었습니다. 관리자에게 문의해 주세요." onLogout={handleLogout} />;
+  }
+
+  return (
+    <div className={cn("min-h-screen transition-colors duration-300")}>
+      <div className="fixed top-4 right-10 z-[100] flex gap-2 items-center">
+        <button onClick={handleLogout} className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-gray-200 dark:border-gray-700 text-xs font-black shadow-2xl hover:bg-red-50 hover:text-red-500 transition-all flex items-center gap-2">
+          <LogOut size={14} /> 로그아웃
+        </button>
+        <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md p-1 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xl">
+          <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
+        </div>
+      </div>
+      <Routes>
+        <Route path="/student/*" element={profile.role === "student" ? <StudentView session={session} profile={profile} fetchProfile={fetchProfile} handleTestLogin={async () => {}} handleLogout={handleLogout} /> : <Navigate to={profile.role === "teacher" ? "/teacher" : "/"} replace />} />
+        <Route path="/teacher/*" element={profile.role === "teacher" ? <SecureTeacherView session={session} profile={profile} handleLogout={handleLogout} /> : <Navigate to={profile.role === "student" ? "/student" : "/"} replace />} />
+        <Route path="/" element={<Navigate to={profile.role === "teacher" ? "/teacher" : "/student"} replace />} />
+      </Routes>
+    </div>
+  );
+}

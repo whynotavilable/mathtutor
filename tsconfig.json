@@ -22,5 +22,12 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": [
+    "dist",
+    "node_modules",
+    "src/src",
+    "supabase",
+    "src/supabase"
+  ]
 }
