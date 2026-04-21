@@ -118,11 +118,11 @@ interface TeacherResourceItem {
   name: string;
   type: string;
   size: number;
-  dataUrl: string;
   uploadedAt: string;
   category: "curriculum" | "resource" | "example";
   description?: string;
   classKey?: string;
+  objectPath?: string;
 }
 
 import { 
@@ -416,7 +416,8 @@ const buildSessionArchiveMarkdown = ({
 };
 
 const CURRICULUM_STORAGE_KEY = "MATH_TUTOR_CURRICULUM_UNITS";
-const RESOURCE_STORAGE_KEY = "MATH_TUTOR_RESOURCES";
+const SUPABASE_RESOURCE_BUCKET =
+  (import.meta as any).env.VITE_SUPABASE_RESOURCE_BUCKET || "teacher-resources";
 
 const DEFAULT_CURRICULUM_UNITS: CurriculumUnit[] = [
   {
@@ -460,28 +461,21 @@ const writeCurriculumUnits = (units: CurriculumUnit[]) => {
   localStorage.setItem(CURRICULUM_STORAGE_KEY, JSON.stringify(units));
 };
 
-const readTeacherResources = () => {
-  try {
-    const saved = localStorage.getItem(RESOURCE_STORAGE_KEY);
-    if (!saved) return [] as TeacherResourceItem[];
-    const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed as TeacherResourceItem[] : [];
-  } catch {
-    return [] as TeacherResourceItem[];
-  }
-};
+const buildResourceObjectPath = (classKey: string, category: TeacherResourceItem["category"], fileName: string) =>
+  `${classKey || "all"}__${category}__${Date.now()}__${encodeURIComponent(fileName)}`;
 
-const writeTeacherResources = (items: TeacherResourceItem[]) => {
-  localStorage.setItem(RESOURCE_STORAGE_KEY, JSON.stringify(items));
+const parseResourceObjectPath = (path: string) => {
+  const parts = path.split("__");
+  if (parts.length < 4) return null;
+  const [classKey, category, uploadedAt, ...nameParts] = parts;
+  const fileName = decodeURIComponent(nameParts.join("__"));
+  return {
+    classKey,
+    category: category as TeacherResourceItem["category"],
+    uploadedAt,
+    fileName,
+  };
 };
-
-const fileToDataUrl = (file: File) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
 
 const ThemeToggle = ({ theme, toggleTheme }: { theme: string; toggleTheme: () => void }) => (
   <button
@@ -3194,44 +3188,120 @@ const TeacherCurriculum = ({ selectedClassKey }: { selectedClassKey: string }) =
 };
 
 const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => {
-  const [resources, setResources] = useState<TeacherResourceItem[]>(() => readTeacherResources());
+  const [resources, setResources] = useState<TeacherResourceItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [storageError, setStorageError] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const filteredResources = resources.filter((item) => !selectedClassKey || !item.classKey || item.classKey === selectedClassKey);
+
+  const fetchResources = async () => {
+    setLoading(true);
+    setStorageError("");
+    const { data, error } = await supabase.storage.from(SUPABASE_RESOURCE_BUCKET).list("", {
+      limit: 200,
+      sortBy: { column: "name", order: "desc" },
+    });
+
+    if (error) {
+      setResources([]);
+      setStorageError(
+        `교과자료 저장소를 불러오지 못했습니다. Supabase Storage 버킷 '${SUPABASE_RESOURCE_BUCKET}'과 접근 정책을 확인해주세요.`
+      );
+      setLoading(false);
+      return;
+    }
+
+    const mappedResources = (data || [])
+      .filter((item) => item.name && !item.id?.startsWith?.("folder"))
+      .map((item) => {
+        const parsed = parseResourceObjectPath(item.name);
+        if (!parsed) return null;
+        return {
+          id: item.id || item.name,
+          name: parsed.fileName,
+          type: item.metadata?.mimetype || "application/octet-stream",
+          size: Number(item.metadata?.size || 0),
+          uploadedAt: item.created_at || new Date(Number(parsed.uploadedAt || Date.now())).toISOString(),
+          category: parsed.category,
+          classKey: parsed.classKey === "all" ? "" : parsed.classKey,
+          objectPath: item.name,
+        } satisfies TeacherResourceItem;
+      })
+      .filter(Boolean) as TeacherResourceItem[];
+
+    setResources(mappedResources);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchResources();
+  }, []);
 
   const handleFiles = async (files: FileList | null) => {
     if (!files?.length) return;
     try {
       setUploading(true);
-      const nextItems = await Promise.all(
-        Array.from(files).map(async (file) => ({
-          id: crypto.randomUUID(),
-          name: file.name,
-          type: file.type || "application/octet-stream",
-          size: file.size,
-          dataUrl: await fileToDataUrl(file),
-          uploadedAt: new Date().toISOString(),
-          category: file.type.includes("pdf") ? "resource" : file.type.startsWith("image/") ? "example" : "curriculum",
-          classKey: selectedClassKey,
-        } as TeacherResourceItem))
+      setStorageError("");
+      const uploadResults = await Promise.all(
+        Array.from(files).map(async (file) => {
+          const category: TeacherResourceItem["category"] =
+            file.type.includes("pdf") ? "resource" : file.type.startsWith("image/") ? "example" : "curriculum";
+          const objectPath = buildResourceObjectPath(selectedClassKey || "all", category, file.name);
+          const { error } = await supabase.storage
+            .from(SUPABASE_RESOURCE_BUCKET)
+            .upload(objectPath, file, {
+              contentType: file.type || "application/octet-stream",
+              upsert: false,
+            });
+
+          if (error) throw error;
+          return objectPath;
+        })
       );
-      const merged = [...nextItems, ...resources];
-      setResources(merged);
-      writeTeacherResources(merged);
-      alert(`${nextItems.length}개 파일을 업로드했습니다.`);
+      await fetchResources();
+      alert(`${uploadResults.length}개 파일을 업로드했습니다.`);
     } catch (error: any) {
-      alert(error?.message || "파일 업로드에 실패했습니다.");
+      const message = error?.message || "파일 업로드에 실패했습니다.";
+      setStorageError(
+        `${message} 저장소 버킷 '${SUPABASE_RESOURCE_BUCKET}'이 준비되어 있고 업로드 정책이 허용되는지 확인해주세요.`
+      );
+      alert(message);
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = "";
     }
   };
 
-  const removeResource = (id: string) => {
-    const nextItems = resources.filter((item) => item.id !== id);
-    setResources(nextItems);
-    writeTeacherResources(nextItems);
+  const removeResource = async (item: TeacherResourceItem) => {
+    if (!item.objectPath) return;
+    const { error } = await supabase.storage.from(SUPABASE_RESOURCE_BUCKET).remove([item.objectPath]);
+    if (error) {
+      setStorageError(error.message);
+      alert(error.message || "자료 삭제에 실패했습니다.");
+      return;
+    }
+    await fetchResources();
+  };
+
+  const downloadResource = async (item: TeacherResourceItem) => {
+    if (!item.objectPath) return;
+    const { data, error } = await supabase.storage.from(SUPABASE_RESOURCE_BUCKET).createSignedUrl(item.objectPath, 60);
+    if (error || !data?.signedUrl) {
+      setStorageError(error?.message || "다운로드 링크를 만들지 못했습니다.");
+      alert(error?.message || "다운로드 링크를 만들지 못했습니다.");
+      return;
+    }
+
+    const link = document.createElement("a");
+    link.href = data.signedUrl;
+    link.download = item.name;
+    link.target = "_blank";
+    link.rel = "noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   };
 
   return (
@@ -3272,20 +3342,53 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
         </div>
       </div>
 
+      <div className="flex items-center justify-between rounded-xl border border-highlight bg-paper px-5 py-4">
+        <div>
+          <p className="text-xs font-black tracking-widest text-secondary-text uppercase">저장 위치</p>
+          <p className="text-sm font-bold text-ink">Supabase Storage / {SUPABASE_RESOURCE_BUCKET}</p>
+        </div>
+        <button
+          onClick={fetchResources}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-highlight text-xs font-black text-accent"
+        >
+          <RefreshCcw size={14} />
+          새로고침
+        </button>
+      </div>
+
+      {storageError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-600">
+          {storageError}
+        </div>
+      )}
+
       <div className="grid gap-4">
+        {loading && (
+          <div className="bg-white rounded-xl border border-highlight p-10 text-center text-sm font-bold text-gray-400">
+            저장소 자료를 불러오는 중입니다.
+          </div>
+        )}
         {filteredResources.map((item) => (
           <div key={item.id} className="bg-white rounded-xl border border-highlight p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-sm font-black text-ink">{item.name}</p>
-              <p className="text-[10px] font-bold text-secondary-text">{new Date(item.uploadedAt).toLocaleString()} / {(item.size / 1024).toFixed(1)} KB / {item.classKey || "전체"}</p>
+              <p className="text-[10px] font-bold text-secondary-text">
+                {new Date(item.uploadedAt).toLocaleString()} / {(item.size / 1024).toFixed(1)} KB / {item.classKey || "전체"} / {
+                  item.category === "curriculum" ? "교육과정" : item.category === "example" ? "예시 문항" : "교과자료"
+                }
+              </p>
             </div>
             <div className="flex gap-2">
-              <a href={item.dataUrl} download={item.name} className="px-4 py-2 rounded-xl border border-highlight text-xs font-black text-accent">다운로드</a>
-              <button onClick={() => removeResource(item.id)} className="px-4 py-2 rounded-xl border border-highlight text-xs font-black text-red-500">삭제</button>
+              <button onClick={() => downloadResource(item)} className="px-4 py-2 rounded-xl border border-highlight text-xs font-black text-accent">다운로드</button>
+              <button onClick={() => removeResource(item)} className="px-4 py-2 rounded-xl border border-highlight text-xs font-black text-red-500">삭제</button>
             </div>
           </div>
         ))}
-        {filteredResources.length === 0 && <div className="bg-white rounded-xl border border-highlight p-10 text-center text-sm font-bold text-gray-400">업로드된 자료가 없습니다.</div>}
+        {!loading && filteredResources.length === 0 && (
+          <div className="bg-white rounded-xl border border-highlight p-10 text-center text-sm font-bold text-gray-400">
+            업로드된 자료가 없습니다.
+          </div>
+        )}
       </div>
     </div>
   );
