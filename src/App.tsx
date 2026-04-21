@@ -1831,7 +1831,7 @@ const StudentView = ({ session, profile, fetchProfile, handleTestLogin, handleLo
 
 // --- Teacher Views ---
 
-const TeacherDashboard = () => {
+const TeacherDashboard = ({ profile }: { profile: UserProfile | null }) => {
   const [showClassInstructions, setShowClassInstructions] = useState(false);
   const [classInstructions, setClassInstructions] = useState<TeacherInstructions>({
     weeklyGoals: "미분법 단원 심화 학습 및 문제 풀이",
@@ -1843,6 +1843,105 @@ const TeacherDashboard = () => {
     aiMisconceptionResponse: "즉시 정정하기보다 반례를 들어 스스로 깨닫게 함",
     aiEngagementStrategy: "수능 실전 응용 사례를 언급하여 동기 부여",
   });
+  const [saving, setSaving] = useState(false);
+  const [dashboardStudents, setDashboardStudents] = useState<UserProfile[]>([]);
+  const [latestSessionsByStudent, setLatestSessionsByStudent] = useState<Record<string, any>>({});
+  const [stats, setStats] = useState([
+    { label: "전체 학생 수", value: "0", icon: Users, color: "text-blue-600", bg: "bg-blue-50" },
+    { label: "오늘 학습 세션", value: "0", icon: MessageSquare, color: "text-green-600", bg: "bg-green-50" },
+    { label: "평균 성취도", value: "-", icon: BarChart3, color: "text-purple-600", bg: "bg-purple-50" },
+    { label: "도움 필요 학생", value: "0", icon: ClipboardCheck, color: "text-red-600", bg: "bg-red-50" }
+  ]);
+
+  useEffect(() => {
+    const loadDashboard = async () => {
+      try {
+        const { data: students, error: studentsError } = await supabase
+          .from("users")
+          .select("*")
+          .eq("role", "student")
+          .eq("status", "approved")
+          .order("created_at", { ascending: true });
+
+        if (studentsError) throw studentsError;
+
+        const approvedStudents = (students || []) as UserProfile[];
+        setDashboardStudents(approvedStudents);
+
+        const studentIds = approvedStudents.map((student) => student.id);
+        const [{ data: sessions, error: sessionsError }, { data: reports, error: reportsError }] = await Promise.all([
+          studentIds.length
+            ? supabase.from("chat_sessions").select("*").in("user_id", studentIds).order("created_at", { ascending: false })
+            : Promise.resolve({ data: [], error: null } as any),
+          supabase.from("reports").select("*"),
+        ]);
+
+        if (sessionsError) throw sessionsError;
+        if (reportsError) throw reportsError;
+
+        const latestByStudent = (sessions || []).reduce((acc: Record<string, any>, session: any) => {
+          if (!acc[session.user_id]) acc[session.user_id] = session;
+          return acc;
+        }, {});
+
+        setLatestSessionsByStudent(latestByStudent);
+
+        const today = new Date().toISOString().slice(0, 10);
+        const todaysSessions = (sessions || []).filter((session: any) => (session.created_at || "").slice(0, 10) === today).length;
+        const reportRows = reports || [];
+        const atRiskCount = reportRows.filter((report: any) => {
+          const misconceptionText = `${report.misconceptions || ""}`.toLowerCase();
+          return misconceptionText.includes("오개념") || misconceptionText.includes("혼동") || misconceptionText.includes("부족") || misconceptionText.includes("필요");
+        }).length;
+
+        setStats([
+          { label: "전체 학생 수", value: String(approvedStudents.length), icon: Users, color: "text-blue-600", bg: "bg-blue-50" },
+          { label: "오늘 학습 세션", value: String(todaysSessions), icon: MessageSquare, color: "text-green-600", bg: "bg-green-50" },
+          { label: "누적 보고서", value: String(reportRows.length), icon: BarChart3, color: "text-purple-600", bg: "bg-purple-50" },
+          { label: "도움 필요 학생", value: String(atRiskCount), icon: ClipboardCheck, color: "text-red-600", bg: "bg-red-50" }
+        ]);
+      } catch (error) {
+        console.error("Failed to load teacher dashboard:", error);
+      }
+    };
+
+    loadDashboard();
+  }, []);
+
+  const handleSaveClassInstructions = async () => {
+    if (!profile) return;
+    try {
+      setSaving(true);
+      const updates = dashboardStudents.map(async (student) => {
+        const parsed = parseInstructionState(student.instructions);
+        return supabase
+          .from("users")
+          .update({
+            instructions: stringifyInstructionState({
+              studentSettings: parsed.studentSettings,
+              teacherContext: {
+                ...parsed.teacherContext,
+                classInstruction: buildTeacherPrompt(classInstructions),
+                classSettings: { ...classInstructions },
+                updatedAt: new Date().toISOString(),
+                updatedBy: profile.id,
+                updatedByEmail: profile.email,
+              },
+            }),
+          })
+          .eq("id", student.id);
+      });
+
+      await Promise.all(updates);
+      setShowClassInstructions(false);
+      alert("학급 공통 지침을 저장하고 전체 학생에게 적용했습니다.");
+    } catch (error: any) {
+      console.error("Failed to save class instructions:", error);
+      alert(`학급 지침 저장에 실패했습니다: ${error?.message || "unknown error"}`);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center min-h-[400px]">
@@ -1936,9 +2035,10 @@ const TeacherDashboard = () => {
                    className="px-8 py-4 border border-highlight rounded-2xl text-xs font-black text-secondary-text hover:bg-paper transition-all uppercase tracking-widest"
                  >취소</button>
                  <button 
-                   onClick={() => setShowClassInstructions(false)}
-                   className="px-10 py-4 bg-accent text-white rounded-2xl text-xs font-black hover:bg-sidebar transition-all shadow-xl shadow-accent/20 uppercase tracking-widest"
-                 >저장 및 전체 적용</button>
+                   onClick={handleSaveClassInstructions}
+                   disabled={saving}
+                   className="px-10 py-4 bg-accent text-white rounded-2xl text-xs font-black hover:bg-sidebar transition-all shadow-xl shadow-accent/20 uppercase tracking-widest disabled:opacity-50"
+                 >{saving ? "저장 중..." : "저장 및 전체 적용"}</button>
               </footer>
             </motion.div>
           </div>
@@ -1946,12 +2046,7 @@ const TeacherDashboard = () => {
       </AnimatePresence>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6" id="teacher-stats-container">
-      {[
-        { label: "전체 학생 수", value: "32", icon: Users, color: "text-blue-600", bg: "bg-blue-50" },
-        { label: "오늘 학습 세션", value: "24", icon: MessageSquare, color: "text-green-600", bg: "bg-green-50" },
-        { label: "평균 성취도", value: "78%", icon: BarChart3, color: "text-purple-600", bg: "bg-purple-50" },
-        { label: "도움 필요 학생", value: "5", icon: ClipboardCheck, color: "text-red-600", bg: "bg-red-50" }
-      ].map((stat, i) => (
+      {stats.map((stat, i) => (
         <div key={i} className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-highlight shadow-sm">
           <div className={cn("p-2 rounded-lg w-fit mb-4", stat.bg, stat.color)}>
             <stat.icon size={20} />
@@ -2030,10 +2125,12 @@ const TeacherDashboard = () => {
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-highlight overflow-hidden shadow-sm">
         <div className="p-5 border-b border-highlight flex justify-between items-center bg-gray-50/30">
           <h3 className="font-bold text-sm text-ink uppercase tracking-wide">우리 반 학생 목록</h3>
-          <span className="text-[10px] font-bold text-secondary-text bg-highlight px-2 py-1 rounded">전체 24명</span>
+          <span className="text-[10px] font-bold text-secondary-text bg-highlight px-2 py-1 rounded">전체 {dashboardStudents.length}명</span>
         </div>
         <div className="divide-y divide-highlight">
-          {DUMMY_CLASSES[0].students.map(s => (
+          {dashboardStudents.length === 0 ? (
+            <div className="px-6 py-12 text-center text-sm font-bold text-gray-400">표시할 학생 데이터가 없습니다.</div>
+          ) : dashboardStudents.slice(0, 8).map(s => (
             <Link to={`/teacher/analysis/${s.id}`} key={s.id} className="flex items-center justify-between p-4 px-6 hover:bg-paper transition-colors group">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-highlight border border-gray-200 flex items-center justify-center text-xs font-bold text-accent">
@@ -2041,13 +2138,15 @@ const TeacherDashboard = () => {
                 </div>
                 <div>
                   <p className="text-sm font-bold text-ink">{s.name}</p>
-                  <p className="text-[10px] text-secondary-text">최근 학습: {formatDate(s.sessions[0].date)}</p>
+                  <p className="text-[10px] text-secondary-text">
+                    최근 학습: {latestSessionsByStudent[s.id]?.created_at ? formatDate(new Date(latestSessionsByStudent[s.id].created_at)) : "기록 없음"}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-4">
                 <div className="text-right">
-                  <p className="text-[10px] text-secondary-text font-bold">성취도</p>
-                  <p className="text-sm font-black text-accent">{s.sessions[0].achievement}%</p>
+                  <p className="text-[10px] text-secondary-text font-bold">반/번호</p>
+                  <p className="text-sm font-black text-accent">{getClassLabel(s)} / {s.number || "-"}</p>
                 </div>
                 <ChevronRight size={16} className="text-gray-300 group-hover:text-accent transition-colors" />
               </div>
@@ -2826,18 +2925,38 @@ const TeacherChat = ({ profile, session }: { profile: UserProfile | null, sessio
       return;
     }
 
-    await fetchMessages(sid!);
     const currentInput = input;
     setInput("");
-    
-    setTimeout(async () => {
-      const resp = `**${currentInput}** 관련 분석 결과입니다. 현재 학급의 평균 성취도를 고려할 때, 해당 개념에 보충이 필요한 학생은 3명으로 파악됩니다. 상세 리포트를 생성해 드릴까요?`;
+    await fetchMessages(sid!);
+
+    try {
+      const history = messages.map((message) => ({
+        role: message.role === "user" ? "user" : "model",
+        parts: [{ text: message.content }],
+      }));
+
+      const chat = ai.chats.create({
+        model: GEMINI_TEXT_MODEL,
+        config: { systemInstruction: buildTeacherAssistantInstruction(profile) },
+        history,
+      });
+
+      const response = await chat.sendMessage({ message: currentInput });
+      const resp = response.text || "응답을 받지 못했습니다.";
+
       await supabase
         .from('chat_messages')
         .insert({ session_id: sid!, role: 'assistant', content: resp });
       await fetchMessages(sid!);
+    } catch (error: any) {
+      console.error("Teacher AI error:", error);
+      await supabase
+        .from('chat_messages')
+        .insert({ session_id: sid!, role: 'assistant', content: `오류: ${error?.message || "AI 연결 실패"}` });
+      await fetchMessages(sid!);
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   return (
@@ -3004,20 +3123,6 @@ const RoleSelection = ({ onSelect }: { onSelect: (role: 'student' | 'teacher') =
     e.preventDefault();
     setFormLoading(true);
 
-    const TEST_ACCOUNTS: Record<string, { id: string, role: 'student' | 'teacher', name: string }> = {
-      'student1@test.com': { id: '00000000-0000-0000-0000-000000002001', role: 'student', name: '김학생' },
-      'student2@test.com': { id: '00000000-0000-0000-0000-000000002002', role: 'student', name: '이학생' },
-      'teacher1@test.com': { id: '00000000-0000-0000-0000-000000001001', role: 'teacher', name: '박교사' },
-      'teacher2@test.com': { id: '00000000-0000-0000-0000-000000001002', role: 'teacher', name: '최교사' },
-    };
-
-    if (TEST_ACCOUNTS[email] && password === '1234') {
-      const acc = TEST_ACCOUNTS[email];
-      (window as any)._handleTestAccountLogin(email, acc.role, acc.name, acc.id);
-      setFormLoading(false);
-      return;
-    }
-
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       alert(error.message);
@@ -3037,7 +3142,13 @@ const RoleSelection = ({ onSelect }: { onSelect: (role: 'student' | 'teacher') =
       email, 
       password,
       options: {
-        data: { name, role: selectedRole }
+        data: {
+          name,
+          role: selectedRole,
+          grade: selectedRole === "student" ? grade : null,
+          class: selectedRole === "student" ? classNum : null,
+          number: selectedRole === "student" ? number : null,
+        }
       }
     });
 
@@ -3054,9 +3165,13 @@ const RoleSelection = ({ onSelect }: { onSelect: (role: 'student' | 'teacher') =
         name,
         role: selectedRole,
         status: 'pending',
-        grade: selectedRole === 'student' ? grade : '',
-        class: selectedRole === 'student' ? classNum : '',
-        number: selectedRole === 'student' ? number : '',
+        grade: selectedRole === 'student' ? grade : null,
+        class: selectedRole === 'student' ? classNum : null,
+        number: selectedRole === 'student' ? number : null,
+        instructions: stringifyInstructionState({
+          studentSettings: { ...DEFAULT_STUDENT_INSTRUCTIONS },
+          teacherContext: {},
+        }),
       });
 
       if (profileError) {
@@ -3247,8 +3362,14 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [enrollRequests, setEnrollRequests] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const isAdmin = isAdminUser(profile);
 
   const fetchRequests = async () => {
+    if (!isAdmin) {
+      setEnrollRequests([]);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const { data, error } = await supabase
@@ -3316,6 +3437,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
           <SidebarItem icon={LayoutDashboard} label="대시보드" to="/teacher" active={location.pathname === "/teacher"} onClick={() => setIsSidebarOpen(false)} id="teacher-dashboard-link" />
           <SidebarItem icon={BarChart3} label="학생 분석" to="/teacher/analysis" active={location.pathname.startsWith("/teacher/analysis")} onClick={() => setIsSidebarOpen(false)} id="teacher-analysis-link" />
           <SidebarItem icon={MessageSquare} label="교사 채팅" to="/teacher/chat" active={location.pathname === "/teacher/chat"} onClick={() => setIsSidebarOpen(false)} />
+          {isAdmin && <SidebarItem icon={ShieldCheck} label="승인 관리" to="/teacher/approvals" active={location.pathname === "/teacher/approvals"} onClick={() => setIsSidebarOpen(false)} />}
           <SidebarItem icon={Settings} label="설정" to="/teacher/settings" active={location.pathname === "/teacher/settings"} onClick={() => setIsSidebarOpen(false)} />
         </nav>
         <div className="mt-auto px-6 py-4 border-t border-white/10">
@@ -3361,8 +3483,8 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
         </header>
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
           <Routes>
-            <Route index element={<TeacherDashboard />} />
-            <Route path="approvals" element={
+            <Route index element={<TeacherDashboard profile={profile} />} />
+            <Route path="approvals" element={isAdmin ? (
               <div className="space-y-8">
                 <div>
                    <h2 className="text-2xl font-black text-ink uppercase tracking-tighter mb-1">Enrollment Approvals</h2>
@@ -3430,9 +3552,9 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
                    </div>
                 </div>
               </div>
-            } />
-            <Route path="analysis" element={<TeacherAnalysis />} />
-            <Route path="analysis/:studentId" element={<TeacherAnalysis />} />
+            ) : <Navigate to="/teacher" replace />} />
+            <Route path="analysis" element={<SecureTeacherAnalysis profile={profile} />} />
+            <Route path="analysis/:studentId" element={<SecureTeacherAnalysis profile={profile} />} />
             <Route path="chat" element={<div id="teacher-chat-area" className="h-full"><TeacherChat profile={profile} session={session} /></div>} />
             <Route path="class" element={<div className="p-8 font-black text-2xl text-ink uppercase">Class Management Coming Soon...</div>} />
             <Route path="curriculum" element={<TeacherCurriculum />} />
@@ -4688,7 +4810,7 @@ export default function App() {
   }
 
   if (!session) {
-    return <SecureRoleSelection />;
+    return <RoleSelection onSelect={() => {}} />;
   }
 
   if (!profile) {
@@ -4715,7 +4837,7 @@ export default function App() {
       </div>
       <Routes>
         <Route path="/student/*" element={profile.role === "student" ? <StudentView session={session} profile={profile} fetchProfile={fetchProfile} handleTestLogin={async () => {}} handleLogout={handleLogout} /> : <Navigate to={profile.role === "teacher" ? "/teacher" : "/"} replace />} />
-        <Route path="/teacher/*" element={profile.role === "teacher" ? <SecureTeacherView session={session} profile={profile} handleLogout={handleLogout} /> : <Navigate to={profile.role === "student" ? "/student" : "/"} replace />} />
+        <Route path="/teacher/*" element={profile.role === "teacher" ? <TeacherView session={session} profile={profile} handleLogout={handleLogout} /> : <Navigate to={profile.role === "student" ? "/student" : "/"} replace />} />
         <Route path="/" element={<Navigate to={profile.role === "teacher" ? "/teacher" : "/student"} replace />} />
       </Routes>
     </div>
