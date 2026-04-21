@@ -104,6 +104,27 @@ interface ArchivedSessionDocument {
   content: string;
 }
 
+interface CurriculumUnit {
+  id: string;
+  title: string;
+  goals: string;
+  active: boolean;
+  classKey?: string;
+  createdAt: string;
+}
+
+interface TeacherResourceItem {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  dataUrl: string;
+  uploadedAt: string;
+  category: "curriculum" | "resource" | "example";
+  description?: string;
+  classKey?: string;
+}
+
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Cell
@@ -393,6 +414,74 @@ const buildSessionArchiveMarkdown = ({
       : ["No conversation saved.", ""]),
   ].join("\n");
 };
+
+const CURRICULUM_STORAGE_KEY = "MATH_TUTOR_CURRICULUM_UNITS";
+const RESOURCE_STORAGE_KEY = "MATH_TUTOR_RESOURCES";
+
+const DEFAULT_CURRICULUM_UNITS: CurriculumUnit[] = [
+  {
+    id: "unit-1",
+    title: "I. 함수의 극한과 연속",
+    goals: "극한의 성질 이해, 연속의 정의, 그래프 해석",
+    active: true,
+    classKey: "3-1",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "unit-2",
+    title: "II. 다항함수의 미분법",
+    goals: "미분계수의 의미, 도함수 활용, 접선의 방정식",
+    active: true,
+    classKey: "3-2",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "unit-3",
+    title: "III. 다항함수의 적분법",
+    goals: "부정적분과 정적분의 이해, 넓이 해석",
+    active: false,
+    classKey: "",
+    createdAt: new Date().toISOString(),
+  },
+];
+
+const readCurriculumUnits = () => {
+  try {
+    const saved = localStorage.getItem(CURRICULUM_STORAGE_KEY);
+    if (!saved) return DEFAULT_CURRICULUM_UNITS;
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) && parsed.length ? parsed as CurriculumUnit[] : DEFAULT_CURRICULUM_UNITS;
+  } catch {
+    return DEFAULT_CURRICULUM_UNITS;
+  }
+};
+
+const writeCurriculumUnits = (units: CurriculumUnit[]) => {
+  localStorage.setItem(CURRICULUM_STORAGE_KEY, JSON.stringify(units));
+};
+
+const readTeacherResources = () => {
+  try {
+    const saved = localStorage.getItem(RESOURCE_STORAGE_KEY);
+    if (!saved) return [] as TeacherResourceItem[];
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) ? parsed as TeacherResourceItem[] : [];
+  } catch {
+    return [] as TeacherResourceItem[];
+  }
+};
+
+const writeTeacherResources = (items: TeacherResourceItem[]) => {
+  localStorage.setItem(RESOURCE_STORAGE_KEY, JSON.stringify(items));
+};
+
+const fileToDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 
 const ThemeToggle = ({ theme, toggleTheme }: { theme: string; toggleTheme: () => void }) => (
   <button
@@ -1831,7 +1920,7 @@ const StudentView = ({ session, profile, fetchProfile, handleTestLogin, handleLo
 
 // --- Teacher Views ---
 
-const TeacherDashboard = ({ profile }: { profile: UserProfile | null }) => {
+const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile | null; selectedClassKey: string }) => {
   const [showClassInstructions, setShowClassInstructions] = useState(false);
   const [classInstructions, setClassInstructions] = useState<TeacherInstructions>({
     weeklyGoals: "미분법 단원 심화 학습 및 문제 풀이",
@@ -1865,7 +1954,10 @@ const TeacherDashboard = ({ profile }: { profile: UserProfile | null }) => {
 
         if (studentsError) throw studentsError;
 
-        const approvedStudents = (students || []) as UserProfile[];
+        const allApprovedStudents = (students || []) as UserProfile[];
+        const approvedStudents = selectedClassKey
+          ? allApprovedStudents.filter((student) => getClassKey(student) === selectedClassKey)
+          : allApprovedStudents;
         setDashboardStudents(approvedStudents);
 
         const studentIds = approvedStudents.map((student) => student.id);
@@ -1906,7 +1998,7 @@ const TeacherDashboard = ({ profile }: { profile: UserProfile | null }) => {
     };
 
     loadDashboard();
-  }, []);
+  }, [selectedClassKey]);
 
   const handleSaveClassInstructions = async () => {
     if (!profile) return;
@@ -1978,7 +2070,7 @@ const TeacherDashboard = ({ profile }: { profile: UserProfile | null }) => {
               <header className="px-10 py-8 border-b border-highlight bg-paper/30 flex justify-between items-center">
                  <div>
                     <h3 className="text-2xl font-black text-ink uppercase tracking-tight">학급 공통 학습 지시문</h3>
-                    <p className="text-[10px] text-secondary-text font-bold uppercase tracking-widest mt-1">학급: 3학년 1반 • AI 튜터 시스템 프로토콜</p>
+                    <p className="text-[10px] text-secondary-text font-bold uppercase tracking-widest mt-1">학급: {selectedClassKey ? selectedClassKey.replace("-", "학년 ") + "반" : "전체 학급"} • AI 튜터 시스템 프로토콜</p>
                  </div>
                  <button onClick={() => setShowClassInstructions(false)} className="p-2 hover:bg-paper rounded-full transition-colors"><X size={24}/></button>
               </header>
@@ -3028,77 +3120,176 @@ const TeacherChat = ({ profile, session }: { profile: UserProfile | null, sessio
   );
 };
 
-const TeacherCurriculum = () => (
-  <div className="space-y-8">
-    <div className="flex justify-between items-center">
-      <h2 className="text-2xl font-black text-ink uppercase tracking-tighter">Curriculum Management</h2>
-      <button className="flex items-center gap-2 bg-accent text-white px-5 py-2.5 rounded-lg font-bold text-xs uppercase tracking-widest shadow-md hover:bg-sidebar transition-all hover:scale-[1.02]">
-        <Plus size={16} /> Add New Unit
-      </button>
-    </div>
-    
-    <div className="space-y-4">
-       {[
-         { title: "I. 함수의 극한과 연속", goals: "극한의 성질 이해, 연속의 정의", active: true },
-         { title: "II. 다항함수의 미분법", goals: "미분계수의 의미, 도함수 활용", active: true },
-         { title: "III. 다항함수의 적분법", goals: "부정적분과 정적분의 이해", active: false }
-       ].map((unit, i) => (
-         <div key={i} className="bg-white p-6 rounded-xl border border-highlight flex justify-between items-center shadow-sm hover:shadow-md transition-shadow">
+const TeacherCurriculum = ({ selectedClassKey }: { selectedClassKey: string }) => {
+  const [units, setUnits] = useState<CurriculumUnit[]>(() => readCurriculumUnits());
+  const [title, setTitle] = useState("");
+  const [goals, setGoals] = useState("");
+
+  const filteredUnits = units.filter((unit) => !selectedClassKey || !unit.classKey || unit.classKey === selectedClassKey);
+
+  const handleAddUnit = () => {
+    if (!title.trim() || !goals.trim()) return;
+    const nextUnits = [
+      {
+        id: crypto.randomUUID(),
+        title: title.trim(),
+        goals: goals.trim(),
+        active: true,
+        classKey: selectedClassKey,
+        createdAt: new Date().toISOString(),
+      },
+      ...units,
+    ];
+    setUnits(nextUnits);
+    writeCurriculumUnits(nextUnits);
+    setTitle("");
+    setGoals("");
+  };
+
+  const toggleUnit = (id: string) => {
+    const nextUnits = units.map((unit) => unit.id === id ? { ...unit, active: !unit.active } : unit);
+    setUnits(nextUnits);
+    writeCurriculumUnits(nextUnits);
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h2 className="text-2xl font-black text-ink uppercase tracking-tighter">교육과정 관리</h2>
+          <p className="text-xs font-bold text-secondary-text uppercase tracking-widest">{selectedClassKey ? `${selectedClassKey.replace("-", "학년 ")}반 기준` : "전체 학급 기준"}</p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-[220px_320px_auto]">
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="단원 제목" className="rounded-xl border border-highlight bg-white px-4 py-3 text-sm font-semibold outline-none" />
+          <input value={goals} onChange={(e) => setGoals(e.target.value)} placeholder="학습 목표" className="rounded-xl border border-highlight bg-white px-4 py-3 text-sm font-semibold outline-none" />
+          <button onClick={handleAddUnit} className="flex items-center justify-center gap-2 bg-accent text-white px-5 py-3 rounded-xl font-bold text-xs uppercase tracking-widest shadow-md hover:bg-sidebar transition-all">
+            <Plus size={16} /> 단원 추가
+          </button>
+        </div>
+      </div>
+      <div className="space-y-4">
+        {filteredUnits.map((unit, i) => (
+          <div key={unit.id} className="bg-white p-6 rounded-xl border border-highlight flex justify-between items-center shadow-sm hover:shadow-md transition-shadow">
             <div className="flex gap-6 items-center">
-                <div className="w-10 h-10 bg-paper border border-highlight text-accent flex items-center justify-center rounded-lg font-black text-lg">{i+1}</div>
-                <div>
-                   <h3 className="text-sm font-black mb-0.5 text-ink uppercase">{unit.title}</h3>
-                   <p className="text-[10px] text-secondary-text font-bold">학습 목표: {unit.goals}</p>
-                </div>
+              <div className="w-10 h-10 bg-paper border border-highlight text-accent flex items-center justify-center rounded-lg font-black text-lg">{i + 1}</div>
+              <div>
+                <h3 className="text-sm font-black mb-0.5 text-ink uppercase">{unit.title}</h3>
+                <p className="text-[10px] text-secondary-text font-bold">학습 목표: {unit.goals}</p>
+              </div>
             </div>
             <div className="flex items-center gap-6">
-               {unit.active ? (
-                 <span className="text-[9px] font-black text-success-text bg-success-bg px-2 py-0.5 rounded uppercase tracking-widest">In Progress</span>
-               ) : (
-                 <span className="text-[9px] font-black text-gray-400 bg-highlight px-2 py-0.5 rounded uppercase tracking-widest">Planned</span>
-               )}
-               <button className="p-2 text-gray-300 hover:text-accent transition-colors"><Settings size={18}/></button>
+              {unit.active ? (
+                <span className="text-[9px] font-black text-success-text bg-success-bg px-2 py-0.5 rounded uppercase tracking-widest">진행 중</span>
+              ) : (
+                <span className="text-[9px] font-black text-gray-400 bg-highlight px-2 py-0.5 rounded uppercase tracking-widest">예정</span>
+              )}
+              <button onClick={() => toggleUnit(unit.id)} className="p-2 text-gray-300 hover:text-accent transition-colors"><Settings size={18} /></button>
             </div>
-         </div>
-       ))}
+          </div>
+        ))}
+        {filteredUnits.length === 0 && <div className="bg-white rounded-xl border border-highlight p-10 text-center text-sm font-bold text-gray-400">등록된 교육과정이 없습니다.</div>}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
-const TeacherResource = () => (
-  <div className="space-y-8">
-    <h2 className="text-2xl font-black text-ink uppercase tracking-tighter">Resource Repository</h2>
-    
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-      {/* Upload area */}
-      <div className="p-10 border-2 border-dashed border-highlight rounded-xl bg-white flex flex-col items-center justify-center text-center gap-4 hover:border-accent hover:bg-paper transition-all cursor-pointer group shadow-sm">
-         <div className="w-14 h-14 bg-paper group-hover:bg-accent group-hover:text-white rounded-full flex items-center justify-center text-accent transition-all border border-highlight">
-            <Plus size={24} />
-         </div>
-         <div>
-            <h4 className="font-black text-sm mb-1 text-ink uppercase tracking-tight">Upload New Resource</h4>
-            <p className="text-[10px] text-secondary-text font-bold">PDF, Problem Sets, Study Guides (Max 50MB)</p>
-         </div>
+const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => {
+  const [resources, setResources] = useState<TeacherResourceItem[]>(() => readTeacherResources());
+  const [uploading, setUploading] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const filteredResources = resources.filter((item) => !selectedClassKey || !item.classKey || item.classKey === selectedClassKey);
+
+  const handleFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    try {
+      setUploading(true);
+      const nextItems = await Promise.all(
+        Array.from(files).map(async (file) => ({
+          id: crypto.randomUUID(),
+          name: file.name,
+          type: file.type || "application/octet-stream",
+          size: file.size,
+          dataUrl: await fileToDataUrl(file),
+          uploadedAt: new Date().toISOString(),
+          category: file.type.includes("pdf") ? "resource" : file.type.startsWith("image/") ? "example" : "curriculum",
+          classKey: selectedClassKey,
+        } as TeacherResourceItem))
+      );
+      const merged = [...nextItems, ...resources];
+      setResources(merged);
+      writeTeacherResources(merged);
+      alert(`${nextItems.length}개 파일을 업로드했습니다.`);
+    } catch (error: any) {
+      alert(error?.message || "파일 업로드에 실패했습니다.");
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  const removeResource = (id: string) => {
+    const nextItems = resources.filter((item) => item.id !== id);
+    setResources(nextItems);
+    writeTeacherResources(nextItems);
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-end justify-between">
+        <div>
+          <h2 className="text-2xl font-black text-ink uppercase tracking-tighter">교과자료 보관함</h2>
+          <p className="text-xs font-bold text-secondary-text uppercase tracking-widest">{selectedClassKey ? `${selectedClassKey.replace("-", "학년 ")}반 자료` : "전체 학급 자료"}</p>
+        </div>
+        <input ref={inputRef} type="file" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
       </div>
 
-      <div className="bg-sidebar text-white p-8 rounded-xl relative overflow-hidden flex flex-col justify-between shadow-lg">
-         <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/5 rounded-full blur-3xl"></div>
-         <Database size={32} className="mb-6 opacity-40" />
-         <div>
-            <h3 className="text-lg font-black mb-3 uppercase tracking-tighter">AI Resource Engineering</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <button onClick={() => inputRef.current?.click()} className="p-10 border-2 border-dashed border-highlight rounded-xl bg-white flex flex-col items-center justify-center text-center gap-4 hover:border-accent hover:bg-paper transition-all cursor-pointer group shadow-sm">
+          <div className="w-14 h-14 bg-paper group-hover:bg-accent group-hover:text-white rounded-full flex items-center justify-center text-accent transition-all border border-highlight">
+            <Plus size={24} />
+          </div>
+          <div>
+            <h4 className="font-black text-sm mb-1 text-ink uppercase tracking-tight">{uploading ? "업로드 중..." : "새 자료 업로드"}</h4>
+            <p className="text-[10px] text-secondary-text font-bold">PDF, 이미지, 문제지, 수업안 파일 업로드</p>
+          </div>
+        </button>
+
+        <div className="bg-sidebar text-white p-8 rounded-xl relative overflow-hidden flex flex-col justify-between shadow-lg">
+          <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/5 rounded-full blur-3xl"></div>
+          <Database size={32} className="mb-6 opacity-40" />
+          <div>
+            <h3 className="text-lg font-black mb-3 uppercase tracking-tighter">자료 활용 가이드</h3>
             <p className="text-white/70 text-xs mb-6 leading-relaxed font-medium">
-                업로드된 자료를 분석하여 문제를 생성하거나 개념을 심층적으로 해설할 수 있습니다.
+              업로드한 자료를 학급별로 정리하고, 예시 문항이나 수업 자료의 원본으로 다시 활용할 수 있습니다.
             </p>
             <div className="flex flex-wrap gap-2">
-                {["Generate Problems", "Create Concept Guide", "Similar Items"].map(t => (
-                <button key={t} className="bg-white/10 hover:bg-white hover:text-sidebar text-[9px] font-black px-3 py-1.5 rounded border border-white/20 transition-all uppercase tracking-widest">{t}</button>
-                ))}
+              {["문항 예시", "개념 자료", "수업 자료"].map((t) => (
+                <span key={t} className="bg-white/10 text-[9px] font-black px-3 py-1.5 rounded border border-white/20 uppercase tracking-widest">{t}</span>
+              ))}
             </div>
-         </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4">
+        {filteredResources.map((item) => (
+          <div key={item.id} className="bg-white rounded-xl border border-highlight p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-sm font-black text-ink">{item.name}</p>
+              <p className="text-[10px] font-bold text-secondary-text">{new Date(item.uploadedAt).toLocaleString()} / {(item.size / 1024).toFixed(1)} KB / {item.classKey || "전체"}</p>
+            </div>
+            <div className="flex gap-2">
+              <a href={item.dataUrl} download={item.name} className="px-4 py-2 rounded-xl border border-highlight text-xs font-black text-accent">다운로드</a>
+              <button onClick={() => removeResource(item.id)} className="px-4 py-2 rounded-xl border border-highlight text-xs font-black text-red-500">삭제</button>
+            </div>
+          </div>
+        ))}
+        {filteredResources.length === 0 && <div className="bg-white rounded-xl border border-highlight p-10 text-center text-sm font-bold text-gray-400">업로드된 자료가 없습니다.</div>}
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 // --- Role Selection Component ---
 
@@ -3363,6 +3554,37 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
   const [enrollRequests, setEnrollRequests] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const isAdmin = isAdminUser(profile);
+  const [teacherStudents, setTeacherStudents] = useState<UserProfile[]>([]);
+  const [selectedClassKey, setSelectedClassKey] = useState("");
+
+  useEffect(() => {
+    const fetchTeacherStudents = async () => {
+      const { data, error } = await supabase
+        .from("users")
+        .select("*")
+        .eq("role", "student")
+        .eq("status", "approved")
+        .order("grade", { ascending: true })
+        .order("class", { ascending: true })
+        .order("number", { ascending: true });
+      if (error) {
+        console.error("Failed to fetch class options:", error);
+        return;
+      }
+      const nextStudents = (data || []) as UserProfile[];
+      setTeacherStudents(nextStudents);
+      if (!selectedClassKey && nextStudents.length) {
+        const firstKey = getClassKey(nextStudents[0]);
+        if (firstKey) setSelectedClassKey(firstKey);
+      }
+    };
+    fetchTeacherStudents();
+  }, []);
+
+  const classOptions = Array.from(new Set(teacherStudents.map((student) => getClassKey(student)).filter(Boolean))).map((key) => {
+    const classStudent = teacherStudents.find((student) => getClassKey(student) === key)!;
+    return { key, label: getClassLabel(classStudent) };
+  });
 
   const fetchRequests = async () => {
     if (!isAdmin) {
@@ -3436,6 +3658,8 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
         <nav className="flex flex-col">
           <SidebarItem icon={LayoutDashboard} label="대시보드" to="/teacher" active={location.pathname === "/teacher"} onClick={() => setIsSidebarOpen(false)} id="teacher-dashboard-link" />
           <SidebarItem icon={BarChart3} label="학생 분석" to="/teacher/analysis" active={location.pathname.startsWith("/teacher/analysis")} onClick={() => setIsSidebarOpen(false)} id="teacher-analysis-link" />
+          <SidebarItem icon={BookOpen} label="교육과정" to="/teacher/curriculum" active={location.pathname === "/teacher/curriculum"} onClick={() => setIsSidebarOpen(false)} />
+          <SidebarItem icon={Database} label="교과자료" to="/teacher/resources" active={location.pathname === "/teacher/resources"} onClick={() => setIsSidebarOpen(false)} />
           <SidebarItem icon={MessageSquare} label="교사 채팅" to="/teacher/chat" active={location.pathname === "/teacher/chat"} onClick={() => setIsSidebarOpen(false)} />
           {isAdmin && <SidebarItem icon={ShieldCheck} label="승인 관리" to="/teacher/approvals" active={location.pathname === "/teacher/approvals"} onClick={() => setIsSidebarOpen(false)} />}
           <SidebarItem icon={Settings} label="설정" to="/teacher/settings" active={location.pathname === "/teacher/settings"} onClick={() => setIsSidebarOpen(false)} />
@@ -3472,9 +3696,9 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
               >
                 <Menu size={20} />
               </button>
-              <select className="bg-paper border border-highlight rounded-lg px-3 py-1.5 text-xs font-bold outline-none focus:ring-1 focus:ring-accent">
-                <option>3학년 1반 (심화수학)</option>
-                <option>3학년 2반 (미적분)</option>
+              <select value={selectedClassKey} onChange={(e) => setSelectedClassKey(e.target.value)} className="bg-paper border border-highlight rounded-lg px-3 py-1.5 text-xs font-bold outline-none focus:ring-1 focus:ring-accent">
+                <option value="">전체 학급</option>
+                {classOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
               </select>
            </div>
            <div className="flex items-center gap-4">
@@ -3483,7 +3707,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
         </header>
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
           <Routes>
-            <Route index element={<TeacherDashboard profile={profile} />} />
+            <Route index element={<TeacherDashboard profile={profile} selectedClassKey={selectedClassKey} />} />
             <Route path="approvals" element={isAdmin ? (
               <div className="space-y-8">
                 <div>
@@ -3553,12 +3777,12 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
                 </div>
               </div>
             ) : <Navigate to="/teacher" replace />} />
-            <Route path="analysis" element={<SecureTeacherAnalysis profile={profile} />} />
-            <Route path="analysis/:studentId" element={<SecureTeacherAnalysis profile={profile} />} />
+            <Route path="analysis" element={<SecureTeacherAnalysis profile={profile} selectedClassKey={selectedClassKey} />} />
+            <Route path="analysis/:studentId" element={<SecureTeacherAnalysis profile={profile} selectedClassKey={selectedClassKey} />} />
             <Route path="chat" element={<div id="teacher-chat-area" className="h-full"><TeacherChat profile={profile} session={session} /></div>} />
             <Route path="class" element={<div className="p-8 font-black text-2xl text-ink uppercase">학급 관리 기능 준비 중...</div>} />
-            <Route path="curriculum" element={<TeacherCurriculum />} />
-            <Route path="resources" element={<TeacherResource />} />
+            <Route path="curriculum" element={<TeacherCurriculum selectedClassKey={selectedClassKey} />} />
+            <Route path="resources" element={<TeacherResource selectedClassKey={selectedClassKey} />} />
             <Route path="settings" element={<div className="p-8 font-black text-2xl text-ink">교사 설정 준비 중...</div>} />
           </Routes>
         </div>
@@ -4300,7 +4524,7 @@ const SecureTeacherDashboard = ({ profile }: { profile: UserProfile | null }) =>
   );
 };
 
-const SecureTeacherAnalysis = ({ profile }: { profile: UserProfile | null }) => {
+const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: UserProfile | null; selectedClassKey?: string }) => {
   const location = useLocation();
   const selectedStudentIdFromRoute = location.pathname.split("/").pop();
   const [students, setStudents] = useState<UserProfile[]>([]);
@@ -4415,6 +4639,7 @@ const SecureTeacherAnalysis = ({ profile }: { profile: UserProfile | null }) => 
   };
 
   useEffect(() => { fetchStudents(); }, []);
+  useEffect(() => { setClassFilter(selectedClassKey); }, [selectedClassKey]);
   useEffect(() => {
     if (!selectedStudent?.id) {
       setSessions([]);
@@ -4436,6 +4661,16 @@ const SecureTeacherAnalysis = ({ profile }: { profile: UserProfile | null }) => 
     const matchesClass = !classFilter || getClassKey(student) === classFilter;
     return matchesSearch && matchesClass;
   });
+  useEffect(() => {
+    if (!filteredStudents.length) {
+      setSelectedStudent(null);
+      setSelectedSession(null);
+      return;
+    }
+    if (!selectedStudent || !filteredStudents.some((student) => student.id === selectedStudent.id)) {
+      setSelectedStudent(filteredStudents[0]);
+    }
+  }, [filteredStudents, selectedStudent]);
   const classOptions = Array.from(new Set(students.map((student) => getClassKey(student)).filter(Boolean))).map((key) => {
     const classStudent = students.find((student) => getClassKey(student) === key)!;
     return { key, label: getClassLabel(classStudent) };
