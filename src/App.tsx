@@ -254,6 +254,12 @@ const buildTeacherPrompt = (settings?: Partial<TeacherInstructions>, note?: stri
     .join("\n");
 };
 
+const normalizeReportText = (value?: string | null, fallback = "") => {
+  const text = `${value || fallback}`.trim();
+  if (!text) return fallback;
+  return text.replace(/^"(.*)"$/s, "$1").trim();
+};
+
 const buildStudentSystemInstruction = (
   instructions: StudentInstructions,
   teacherContext: TeacherInstructionContext,
@@ -1207,21 +1213,29 @@ const StudentChat = ({
       
       const response = await ai.models.generateContent({
         model: GEMINI_TEXT_MODEL,
-        contents: `Analyze the following math study chat history between a student and an AI tutor. Provide a structured learning report in JSON format.
-        
-Current Study Goals: ${instructions.currentGoals || 'Not specified'}
-Teacher guidance:
-${buildTeacherPrompt(teacherContext.classSettings, teacherContext.classInstruction) || 'None'}
+        contents: `당신은 대한민국 고등학생 수학 학습을 분석하는 학습 리포트 작성 도우미입니다.
+
+반드시 지켜야 할 규칙:
+1. 출력 내용은 모두 자연스러운 한국어로 작성합니다.
+2. JSON의 키 이름은 영어 그대로 유지하되, 각 값의 내용은 한국어로만 작성합니다.
+3. summary, misconceptions, recommendations 안에는 마크다운 문법 기호를 넣지 않습니다.
+4. 별표(*), 샵(#), 백틱(\`), 대시 목록(-), 밑줄(_) 같은 마크다운 표시를 쓰지 않습니다.
+5. 불필요한 큰따옴표로 문장을 감싸지 않습니다.
+6. 학생을 평가할 때는 단정적인 비난 대신 관찰 중심으로 씁니다.
+
+현재 학습 목표: ${instructions.currentGoals || '명시되지 않음'}
+교사 지침:
+${buildTeacherPrompt(teacherContext.classSettings, teacherContext.classInstruction) || '없음'}
 ${buildTeacherPrompt(teacherContext.studentSettings, teacherContext.studentInstruction) || ''}
 
-Chat History:
+대화 기록:
 ${chatContext}
 
-Provide the report in JSON following this exact field names:
+다음 JSON 형식으로만 응답하세요:
 {
-  "summary": "Brief summary of the study session and key concepts learned",
-  "misconceptions": "Detailed analysis of any misconceptions, errors or mistakes identified during the conversation",
-  "recommendations": "Specific, actionable study recommendations and next steps for the student"
+  "summary": "이번 학습의 핵심 내용과 학생의 이해 정도를 한국어로 요약",
+  "misconceptions": "대화에서 드러난 오개념, 실수, 혼동 지점을 한국어로 설명",
+  "recommendations": "다음 학습 방향과 구체적인 실천 조언을 한국어로 제안"
 }`,
         config: {
           responseMimeType: "application/json",
@@ -1248,9 +1262,9 @@ Provide the report in JSON following this exact field names:
 
       const reportPayload = {
         session_id: activeSessionId,
-        summary: reportData.summary || "No summary available.",
-        misconceptions: reportData.misconceptions || "No misconceptions detected.",
-        recommendations: reportData.recommendations || "Keep practicing!"
+        summary: normalizeReportText(reportData.summary, "요약 정보가 없습니다."),
+        misconceptions: normalizeReportText(reportData.misconceptions, "뚜렷한 오개념이 발견되지 않았습니다."),
+        recommendations: normalizeReportText(reportData.recommendations, "현재 학습 흐름을 유지하며 연습을 이어가세요.")
       };
 
       const reportQuery = existingReport
@@ -1701,8 +1715,12 @@ Provide the report in JSON following this exact field names:
                          <h4 className="flex items-center gap-3 text-[10px] font-black text-accent uppercase tracking-widest mb-6">
                             <Info size={14} /> 학습 내용 요약
                          </h4>
-                         <div className="p-6 bg-paper rounded-2xl text-sm font-semibold text-ink leading-relaxed italic border border-highlight/50">
-                            "{report.summary}"
+                         <div className="p-6 bg-paper rounded-2xl border border-highlight/50 text-sm text-ink leading-relaxed">
+                            <div className="prose prose-sm max-w-none">
+                              <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                                {normalizeReportText(report.summary)}
+                              </ReactMarkdown>
+                            </div>
                          </div>
                       </section>
 
@@ -1711,8 +1729,12 @@ Provide the report in JSON following this exact field names:
                          <h4 className="flex items-center gap-3 text-[10px] font-black text-red-500 uppercase tracking-widest mb-6">
                             <AlertCircle size={14} /> 오개념 및 취약점 분석
                          </h4>
-                         <div className="p-6 bg-red-50/30 rounded-2xl border border-red-100/50 text-sm font-medium text-ink leading-relaxed">
-                            {report.misconceptions}
+                         <div className="p-6 bg-red-50/30 rounded-2xl border border-red-100/50 text-sm text-ink leading-relaxed">
+                            <div className="prose prose-sm max-w-none">
+                              <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                                {normalizeReportText(report.misconceptions)}
+                              </ReactMarkdown>
+                            </div>
                          </div>
                       </section>
 
@@ -1722,8 +1744,12 @@ Provide the report in JSON following this exact field names:
                          <h4 className="flex items-center gap-3 text-[10px] font-black text-green-600 uppercase tracking-widest mb-6">
                             <Lightbulb size={14} /> 추천 학습 방향
                          </h4>
-                         <div className="p-6 bg-green-50/30 rounded-2xl border border-green-100/50 text-sm font-semibold text-ink leading-relaxed">
-                            {report.recommendations}
+                         <div className="p-6 bg-green-50/30 rounded-2xl border border-green-100/50 text-sm text-ink leading-relaxed">
+                            <div className="prose prose-sm max-w-none">
+                              <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                                {normalizeReportText(report.recommendations)}
+                              </ReactMarkdown>
+                            </div>
                          </div>
                       </section>
                    </div>
@@ -1738,9 +1764,9 @@ Provide the report in JSON following this exact field names:
                             classLabel: profile ? getClassLabel(profile) : undefined,
                             sessionTitle: sessions.find((sessionItem) => sessionItem.id === activeSessionId)?.title,
                             createdAt: report.created_at,
-                            summary: report.summary,
-                            misconceptions: report.misconceptions,
-                            recommendations: report.recommendations,
+                            summary: normalizeReportText(report.summary),
+                            misconceptions: normalizeReportText(report.misconceptions),
+                            recommendations: normalizeReportText(report.recommendations),
                           })
                         }
                         className="flex items-center gap-2 text-[10px] font-black text-accent hover:underline"
@@ -5350,22 +5376,30 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
       const chatContext = messages.map((message) => `${message.role.toUpperCase()}: ${message.content}`).join("\n");
       const response = await ai.models.generateContent({
         model: GEMINI_TEXT_MODEL,
-        contents: `Analyze the following math study chat history between a student and an AI tutor. Provide a structured learning report in JSON format.
+        contents: `당신은 대한민국 고등학생 수학 학습을 분석하는 교사용 학습 리포트 작성 도우미입니다.
 
-Student: ${selectedStudent.name}
-Current Study Goals: ${parsed.studentSettings.currentGoals || "Not specified"}
-Teacher guidance:
-${buildTeacherPrompt(parsed.teacherContext.classSettings, parsed.teacherContext.classInstruction) || "None"}
+반드시 지켜야 할 규칙:
+1. 출력 내용은 모두 자연스러운 한국어로 작성합니다.
+2. JSON의 키 이름은 영어 그대로 유지하되, 각 값의 내용은 한국어로만 작성합니다.
+3. summary, misconceptions, recommendations 안에는 마크다운 문법 기호를 넣지 않습니다.
+4. 별표(*), 샵(#), 백틱(\`), 대시 목록(-), 밑줄(_) 같은 마크다운 표시를 쓰지 않습니다.
+5. 불필요한 큰따옴표로 문장을 감싸지 않습니다.
+6. 교사가 바로 활용할 수 있게 구체적으로 씁니다.
+
+학생 이름: ${selectedStudent.name}
+현재 학습 목표: ${parsed.studentSettings.currentGoals || "명시되지 않음"}
+교사 지침:
+${buildTeacherPrompt(parsed.teacherContext.classSettings, parsed.teacherContext.classInstruction) || "없음"}
 ${buildTeacherPrompt(parsed.teacherContext.studentSettings, parsed.teacherContext.studentInstruction) || ""}
 
-Chat History:
+대화 기록:
 ${chatContext}
 
-Provide the report in JSON following this exact field names:
+다음 JSON 형식으로만 응답하세요:
 {
-  "summary": "Brief summary of the study session and key concepts learned",
-  "misconceptions": "Detailed analysis of any misconceptions, errors or mistakes identified during the conversation",
-  "recommendations": "Specific, actionable study recommendations and next steps for the student"
+  "summary": "이번 학습의 핵심 내용과 학생의 이해 정도를 한국어로 요약",
+  "misconceptions": "대화에서 드러난 오개념, 실수, 혼동 지점을 한국어로 설명",
+  "recommendations": "다음 학습 방향과 구체적인 개입 조언을 한국어로 제안"
 }`,
         config: {
           responseMimeType: "application/json",
@@ -5384,9 +5418,9 @@ Provide the report in JSON following this exact field names:
       const reportData = JSON.parse(response.text || "{}");
       const reportPayload = {
         session_id: selectedSession.id,
-        summary: reportData.summary || "No summary available.",
-        misconceptions: reportData.misconceptions || "No misconceptions detected.",
-        recommendations: reportData.recommendations || "Keep practicing!",
+        summary: normalizeReportText(reportData.summary, "요약 정보가 없습니다."),
+        misconceptions: normalizeReportText(reportData.misconceptions, "뚜렷한 오개념이 발견되지 않았습니다."),
+        recommendations: normalizeReportText(reportData.recommendations, "현재 학습 흐름을 유지하며 다음 단계를 준비하세요."),
       };
       const { data: existingReport } = await supabase
         .from("reports")
@@ -5481,9 +5515,9 @@ Provide the report in JSON following this exact field names:
                         classLabel: selectedStudent ? getClassLabel(selectedStudent) : undefined,
                         sessionTitle: selectedSession?.title,
                         createdAt: report.created_at,
-                        summary: report.summary,
-                        misconceptions: report.misconceptions,
-                        recommendations: report.recommendations,
+                        summary: normalizeReportText(report.summary),
+                        misconceptions: normalizeReportText(report.misconceptions),
+                        recommendations: normalizeReportText(report.recommendations),
                       })
                     }
                     className="inline-flex items-center gap-2 rounded-xl border border-highlight px-4 py-2 text-xs font-black text-accent"
@@ -5492,9 +5526,9 @@ Provide the report in JSON following this exact field names:
                     PDF 내보내기
                   </button>
                 </div>
-                <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">학습 요약</p><p className="text-sm font-semibold leading-relaxed text-ink">{report.summary}</p></div>
-                <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">오개념 및 막힌 지점</p><p className="text-sm font-semibold leading-relaxed text-ink">{report.misconceptions}</p></div>
-                <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">추천 개입</p><p className="text-sm font-semibold leading-relaxed text-ink">{report.recommendations}</p></div>
+                <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">학습 요약</p><div className="prose prose-sm max-w-none text-ink"><ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{normalizeReportText(report.summary)}</ReactMarkdown></div></div>
+                <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">오개념 및 막힌 지점</p><div className="prose prose-sm max-w-none text-ink"><ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{normalizeReportText(report.misconceptions)}</ReactMarkdown></div></div>
+                <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">추천 개입</p><div className="prose prose-sm max-w-none text-ink"><ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{normalizeReportText(report.recommendations)}</ReactMarkdown></div></div>
               </div>
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
