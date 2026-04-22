@@ -30,6 +30,7 @@ import {
   RefreshCcw,
   ShieldCheck,
   AlertCircle,
+  Pencil,
   ArrowRight,
   ArrowLeft,
   SkipForward,
@@ -1436,6 +1437,47 @@ Provide the report in JSON following this exact field names:
     }
   };
 
+  const handleRenameSession = async (sessionItem: any) => {
+    if (!profile) return;
+    const nextTitle = window.prompt("새 대화 제목을 입력하세요.", sessionItem.title || "");
+    if (!nextTitle || nextTitle.trim() === sessionItem.title) return;
+    try {
+      const { error } = await supabase
+        .from("chat_sessions")
+        .update({ title: nextTitle.trim() })
+        .eq("id", sessionItem.id)
+        .eq("user_id", profile.id);
+      if (error) throw error;
+      await fetchSessions();
+    } catch (error: any) {
+      alert(error?.message || "대화 제목 수정에 실패했습니다.");
+    }
+  };
+
+  const handleDeleteSession = async (sessionItem: any) => {
+    if (!profile) return;
+    if (!window.confirm(`'${sessionItem.title || "이 대화"}'를 삭제할까요? 메시지와 보고서도 함께 삭제됩니다.`)) return;
+    try {
+      await Promise.all([
+        supabase.from("reports").delete().eq("session_id", sessionItem.id),
+        supabase.from("chat_messages").delete().eq("session_id", sessionItem.id),
+      ]);
+      const { error } = await supabase
+        .from("chat_sessions")
+        .delete()
+        .eq("id", sessionItem.id)
+        .eq("user_id", profile.id);
+      if (error) throw error;
+      if (activeSessionId === sessionItem.id) {
+        setActiveSessionId(null);
+        localStorage.removeItem("ACTIVE_SESSION_ID");
+      }
+      await fetchSessions();
+    } catch (error: any) {
+      alert(error?.message || "대화 삭제에 실패했습니다.");
+    }
+  };
+
   return (
     <div className="flex h-full gap-6 relative">
       {/* Search/History Sidebar inside chat */}
@@ -1469,20 +1511,33 @@ Provide the report in JSON following this exact field names:
                 첫 대화를 시작해 보세요!
               </div>
             ) : sessions.map((s) => (
-              <button 
-                key={s.id} 
-                onClick={() => {
-                  setActiveSessionId(s.id);
-                  alert(`'${s.title}' 대화로 이동합니다.`);
-                }}
+              <div
+                key={s.id}
                 className={cn(
-                  "w-full text-left p-2.5 rounded-lg transition-all border group cursor-pointer",
+                  "relative rounded-lg border p-2.5 transition-all group",
                   activeSessionId === s.id ? "bg-paper border-accent shadow-sm" : "border-transparent hover:bg-paper hover:border-highlight"
                 )}
               >
-                <span className={cn("text-xs font-bold truncate block group-hover:text-accent", activeSessionId === s.id ? "text-accent" : "text-ink")}>{s.title}</span>
-                <span className="text-[9px] text-secondary-text">{new Date(s.created_at).toLocaleDateString()}</span>
-              </button>
+                <div className="absolute right-2 top-2 z-10 flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                  <button type="button" onClick={(e) => { e.stopPropagation(); handleRenameSession(s); }} className="rounded-md p-1 text-secondary-text hover:bg-white hover:text-accent" title="대화 제목 수정">
+                    <Pencil size={12} />
+                  </button>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); handleDeleteSession(s); }} className="rounded-md p-1 text-secondary-text hover:bg-white hover:text-red-500" title="대화 삭제">
+                    <X size={12} />
+                  </button>
+                </div>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setActiveSessionId(s.id);
+                    alert(`'${s.title}' 대화로 이동합니다.`);
+                  }}
+                  className="w-full text-left pr-12"
+                >
+                  <span className={cn("text-xs font-bold truncate block group-hover:text-accent", activeSessionId === s.id ? "text-accent" : "text-ink")}>{s.title}</span>
+                  <span className="text-[9px] text-secondary-text">{new Date(s.created_at).toLocaleDateString()}</span>
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -4898,6 +4953,16 @@ const AdminApprovalPanel = () => {
     await fetchRequests();
   };
 
+  const handleDeleteRecord = async (request: UserProfile) => {
+    if (!window.confirm(`${request.name} (${request.email}) 승인 기록을 삭제할까요? 계정도 함께 삭제됩니다.`)) return;
+    const { error } = await supabase.from("users").delete().eq("id", request.id);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    await fetchRequests();
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
@@ -4935,11 +5000,15 @@ const AdminApprovalPanel = () => {
                   <td className="px-6 py-4 text-right">
                     {request.status === "pending" ? (
                       <div className="flex justify-end gap-2">
+                        <button onClick={() => handleDeleteRecord(request)} className="px-3 py-1.5 rounded-lg border border-highlight text-xs font-black text-red-500 hover:bg-red-50 transition-all">기록 삭제</button>
                         <button onClick={() => handleApprove(request.id, "rejected")} className="px-3 py-1.5 rounded-lg border border-highlight text-xs font-black text-red-500 hover:bg-red-50 transition-all">거절</button>
                         <button onClick={() => handleApprove(request.id, "approved")} className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-black hover:bg-sidebar transition-all">승인</button>
                       </div>
                     ) : (
-                      <span className="text-[10px] text-gray-400 font-bold">처리 완료</span>
+                      <div className="flex justify-end gap-2">
+                        <span className="inline-flex items-center text-[10px] text-gray-400 font-bold">처리 완료</span>
+                        <button onClick={() => handleDeleteRecord(request)} className="px-3 py-1.5 rounded-lg border border-highlight text-xs font-black text-red-500 hover:bg-red-50 transition-all">기록 삭제</button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -5105,6 +5174,7 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
   const [classFilter, setClassFilter] = useState("");
   const [showInstructionModal, setShowInstructionModal] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [tempInstructions, setTempInstructions] = useState<TeacherInstructions>({ ...DEFAULT_TEACHER_INSTRUCTIONS });
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [archiveProfile, setArchiveProfile] = useState("");
@@ -5243,6 +5313,73 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
     }
   };
 
+  const handleGenerateTeacherReport = async () => {
+    if (!selectedSession?.id || !selectedStudent || messages.length === 0 || isGeneratingReport) return;
+    setIsGeneratingReport(true);
+    try {
+      const parsed = parseInstructionState(selectedStudent.instructions);
+      const chatContext = messages.map((message) => `${message.role.toUpperCase()}: ${message.content}`).join("\n");
+      const response = await ai.models.generateContent({
+        model: GEMINI_TEXT_MODEL,
+        contents: `Analyze the following math study chat history between a student and an AI tutor. Provide a structured learning report in JSON format.
+
+Student: ${selectedStudent.name}
+Current Study Goals: ${parsed.studentSettings.currentGoals || "Not specified"}
+Teacher guidance:
+${buildTeacherPrompt(parsed.teacherContext.classSettings, parsed.teacherContext.classInstruction) || "None"}
+${buildTeacherPrompt(parsed.teacherContext.studentSettings, parsed.teacherContext.studentInstruction) || ""}
+
+Chat History:
+${chatContext}
+
+Provide the report in JSON following this exact field names:
+{
+  "summary": "Brief summary of the study session and key concepts learned",
+  "misconceptions": "Detailed analysis of any misconceptions, errors or mistakes identified during the conversation",
+  "recommendations": "Specific, actionable study recommendations and next steps for the student"
+}`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              summary: { type: Type.STRING },
+              misconceptions: { type: Type.STRING },
+              recommendations: { type: Type.STRING },
+            },
+            required: ["summary", "misconceptions", "recommendations"],
+          },
+        },
+      });
+
+      const reportData = JSON.parse(response.text || "{}");
+      const reportPayload = {
+        session_id: selectedSession.id,
+        summary: reportData.summary || "No summary available.",
+        misconceptions: reportData.misconceptions || "No misconceptions detected.",
+        recommendations: reportData.recommendations || "Keep practicing!",
+      };
+      const { data: existingReport } = await supabase
+        .from("reports")
+        .select("id")
+        .eq("session_id", selectedSession.id)
+        .maybeSingle();
+      const reportQuery = existingReport
+        ? supabase.from("reports").update(reportPayload).eq("id", existingReport.id)
+        : supabase.from("reports").insert(reportPayload);
+      const { data, error } = await reportQuery.select().single();
+      if (error) throw error;
+      setReport(data);
+      setActiveTab("report");
+      await fetchArchive(selectedStudent);
+      alert("교사용 학습 보고서가 생성되었습니다.");
+    } catch (error: any) {
+      alert(error?.message || "보고서 생성에 실패했습니다.");
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
   const expandedSessionContent = archiveSessions.find((sessionFile) => sessionFile.filename === expandedArchiveSession)?.content || "";
 
   return (
@@ -5298,7 +5435,15 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
           ) : activeTab === "report" ? (
             report ? (
               <div className="space-y-6">
-                <div className="flex justify-end">
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={handleGenerateTeacherReport}
+                    disabled={isGeneratingReport || messages.length === 0}
+                    className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-xs font-black text-white disabled:opacity-50"
+                  >
+                    {isGeneratingReport ? <RefreshCcw size={14} className="animate-spin" /> : <BookOpenCheck size={14} />}
+                    {isGeneratingReport ? "생성 중..." : "보고서 다시 생성"}
+                  </button>
                   <button
                     onClick={() =>
                       exportLearningReportPdf({
@@ -5322,7 +5467,19 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
                 <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">오개념 및 막힌 지점</p><p className="text-sm font-semibold leading-relaxed text-ink">{report.misconceptions}</p></div>
                 <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">추천 개입</p><p className="text-sm font-semibold leading-relaxed text-ink">{report.recommendations}</p></div>
               </div>
-            ) : <div className="flex h-full items-center justify-center text-sm font-bold text-gray-400">이 세션에는 아직 생성된 보고서가 없습니다.</div>
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+                <div className="text-sm font-bold text-gray-400">이 세션에는 아직 생성된 보고서가 없습니다.</div>
+                <button
+                  onClick={handleGenerateTeacherReport}
+                  disabled={isGeneratingReport || messages.length === 0}
+                  className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-xs font-black text-white disabled:opacity-50"
+                >
+                  {isGeneratingReport ? <RefreshCcw size={14} className="animate-spin" /> : <BookOpenCheck size={14} />}
+                  {isGeneratingReport ? "보고서 생성 중..." : "보고서 생성"}
+                </button>
+              </div>
+            )
           ) : activeTab === "chat" ? (
             <div className="space-y-4">
               {messages.map((message) => (
