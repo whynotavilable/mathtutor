@@ -233,6 +233,23 @@ const stringifyInstructionState = (instructionState: ParsedInstructionState) =>
     teacherContext: instructionState.teacherContext,
   });
 
+const ensureLegacyReportSession = async (sessionId: string) => {
+  const { data, error } = await supabase
+    .from("sessions")
+    .select("id")
+    .eq("id", sessionId)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") throw error;
+  if (data?.id) return;
+
+  const { error: insertError } = await supabase
+    .from("sessions")
+    .insert({ id: sessionId });
+
+  if (insertError && insertError.code !== "23505") throw insertError;
+};
+
 const buildTeacherPrompt = (settings?: Partial<TeacherInstructions>, note?: string) => {
   const activeSettings = {
     ...DEFAULT_TEACHER_INSTRUCTIONS,
@@ -1245,6 +1262,8 @@ Provide the report in JSON following this exact field names:
         .select('id')
         .eq('session_id', activeSessionId)
         .maybeSingle();
+
+      await ensureLegacyReportSession(activeSessionId);
 
       const reportPayload = {
         session_id: activeSessionId,
@@ -5388,6 +5407,7 @@ Provide the report in JSON following this exact field names:
         misconceptions: reportData.misconceptions || "No misconceptions detected.",
         recommendations: reportData.recommendations || "Keep practicing!",
       };
+      await ensureLegacyReportSession(selectedSession.id);
       const { data: existingReport } = await supabase
         .from("reports")
         .select("id")
