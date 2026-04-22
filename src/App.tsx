@@ -1139,7 +1139,14 @@ const StudentChat = ({
         .order('created_at', { ascending: false });
       
       if (error) throw error;
-      setSessions(data || []);
+      const nextSessions = data || [];
+      setSessions(nextSessions);
+      if (activeSessionId && !nextSessions.some((session) => session.id === activeSessionId)) {
+        const fallbackSessionId = nextSessions[0]?.id || null;
+        setActiveSessionId(fallbackSessionId);
+        if (fallbackSessionId) localStorage.setItem("ACTIVE_SESSION_ID", fallbackSessionId);
+        else localStorage.removeItem("ACTIVE_SESSION_ID");
+      }
     } catch (err) {
       console.error("Error fetching sessions:", err);
     }
@@ -1185,6 +1192,17 @@ const StudentChat = ({
     setIsGenerating(true);
     
     try {
+      const { data: existingSession, error: sessionError } = await supabase
+        .from("chat_sessions")
+        .select("id, title")
+        .eq("id", activeSessionId)
+        .eq("user_id", profile.id)
+        .maybeSingle();
+      if (sessionError) throw sessionError;
+      if (!existingSession) {
+        throw new Error("현재 보고서를 생성할 학습 세션을 찾지 못했습니다. 대화 목록에서 세션을 다시 선택하거나 새 대화를 시작해 주세요.");
+      }
+
       const chatContext = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
       
       const response = await ai.models.generateContent({
@@ -5317,6 +5335,17 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
     if (!selectedSession?.id || !selectedStudent || messages.length === 0 || isGeneratingReport) return;
     setIsGeneratingReport(true);
     try {
+      const { data: existingSession, error: sessionError } = await supabase
+        .from("chat_sessions")
+        .select("id")
+        .eq("id", selectedSession.id)
+        .eq("user_id", selectedStudent.id)
+        .maybeSingle();
+      if (sessionError) throw sessionError;
+      if (!existingSession) {
+        throw new Error("이 보고서와 연결된 학습 세션을 찾지 못했습니다. 세션 목록을 새로고침한 뒤 다시 시도해 주세요.");
+      }
+
       const parsed = parseInstructionState(selectedStudent.instructions);
       const chatContext = messages.map((message) => `${message.role.toUpperCase()}: ${message.content}`).join("\n");
       const response = await ai.models.generateContent({
