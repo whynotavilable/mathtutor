@@ -50,6 +50,7 @@ import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import { supabase } from "./supabase";
 import { GoogleGenAI, Type } from "@google/genai";
+import { jsPDF } from "jspdf";
 
 const ai = new GoogleGenAI({ 
   apiKey: (import.meta as any).env.VITE_GEMINI_API_KEY 
@@ -418,6 +419,8 @@ const buildSessionArchiveMarkdown = ({
 const CURRICULUM_STORAGE_KEY = "MATH_TUTOR_CURRICULUM_UNITS";
 const SUPABASE_RESOURCE_BUCKET =
   (import.meta as any).env.VITE_SUPABASE_RESOURCE_BUCKET || "teacher-resources";
+const SUPABASE_HISTORY_BUCKET =
+  (import.meta as any).env.VITE_SUPABASE_HISTORY_BUCKET || "student-history";
 
 const DEFAULT_CURRICULUM_UNITS: CurriculumUnit[] = [
   {
@@ -475,6 +478,222 @@ const parseResourceObjectPath = (path: string) => {
     uploadedAt,
     fileName,
   };
+};
+
+const isTeacherVisibleStudent = (student: UserProfile) => {
+  const email = (student.email || "").toLowerCase();
+  const name = (student.name || "").trim();
+  if (email.endsWith("@example.com")) return false;
+  if (email.startsWith("codex.")) return false;
+  if (/^\?+$/.test(name)) return false;
+  return true;
+};
+
+const buildStudentHistoryBasePath = (studentId: string) => `${studentId}`;
+const buildStudentHistoryProfilePath = (studentId: string) => `${buildStudentHistoryBasePath(studentId)}/profile.md`;
+const buildStudentHistoryTimelinePath = (studentId: string) => `${buildStudentHistoryBasePath(studentId)}/timeline.md`;
+const buildStudentHistorySessionPath = (studentId: string, session: { id: string; title?: string; created_at?: string }) =>
+  `${buildStudentHistoryBasePath(studentId)}/sessions/${buildArchiveFilename(session)}`;
+
+const uploadMarkdownToHistoryBucket = async (path: string, content: string) => {
+  const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+  return supabase.storage.from(SUPABASE_HISTORY_BUCKET).upload(path, blob, {
+    upsert: true,
+    contentType: "text/markdown;charset=utf-8",
+  });
+};
+
+const downloadMarkdownFromHistoryBucket = async (path: string) => {
+  const { data, error } = await supabase.storage.from(SUPABASE_HISTORY_BUCKET).download(path);
+  if (error || !data) throw error || new Error("Markdown download failed");
+  return data.text();
+};
+
+const exportLearningReportPdf = ({
+  title,
+  studentName,
+  classLabel,
+  sessionTitle,
+  createdAt,
+  summary,
+  misconceptions,
+  recommendations,
+}: {
+  title: string;
+  studentName?: string;
+  classLabel?: string;
+  sessionTitle?: string;
+  createdAt?: string;
+  summary: string;
+  misconceptions: string;
+  recommendations: string;
+}) => {
+  const pdf = new jsPDF({ unit: "mm", format: "a4" });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const marginX = 16;
+  let cursorY = 18;
+
+  const ensureSpace = (requiredHeight = 10) => {
+    if (cursorY + requiredHeight > pageHeight - 18) {
+      pdf.addPage();
+      cursorY = 18;
+    }
+  };
+
+  const addWrappedText = (label: string, value: string) => {
+    ensureSpace(18);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(12);
+    pdf.text(label, marginX, cursorY);
+    cursorY += 7;
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10.5);
+    const lines = pdf.splitTextToSize(value || "-", pageWidth - marginX * 2);
+    lines.forEach((line: string) => {
+      ensureSpace(6);
+      pdf.text(line, marginX, cursorY);
+      cursorY += 5.5;
+    });
+    cursorY += 4;
+  };
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(18);
+  pdf.text(title, marginX, cursorY);
+  cursorY += 8;
+
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(10);
+  [
+    studentName ? `Student: ${studentName}` : "",
+    classLabel ? `Class: ${classLabel}` : "",
+    sessionTitle ? `Session: ${sessionTitle}` : "",
+    createdAt ? `Created: ${new Date(createdAt).toLocaleString()}` : "",
+  ]
+    .filter(Boolean)
+    .forEach((line) => {
+      pdf.text(line, marginX, cursorY);
+      cursorY += 5;
+    });
+
+  cursorY += 4;
+  addWrappedText("1. Learning Summary", summary);
+  addWrappedText("2. Misconceptions", misconceptions);
+  addWrappedText("3. Recommendations", recommendations);
+
+  pdf.save(`${sanitizeArchiveSegment(studentName || "learning-report")}.pdf`);
+};
+
+const loadStudentArchiveBundleFromDatabase = async (student: UserProfile) => {
+  const { data: sessionRows, error: sessionError } = await supabase
+    .from("chat_sessions")
+    .select("*")
+    .eq("user_id", student.id)
+    .order("created_at", { ascending: false });
+  if (sessionError) throw sessionError;
+
+  const sessions = sessionRows || [];
+  const sessionIds = sessions.map((session) => session.id);
+  let reportRows: LearningReport[] = [];
+  let messageRows: any[] = [];
+
+  if (sessionIds.length > 0) {
+    const [{ data: fetchedReports, error: reportError }, { data: fetchedMessages, error: messageError }] = await Promise.all([
+      supabase.from("reports").select("*").in("session_id", sessionIds),
+      supabase.from("chat_messages").select("*").in("session_id", sessionIds).order("created_at", { ascending: true }),
+    ]);
+    if (reportError) throw reportError;
+    if (messageError) throw messageError;
+    reportRows = fetchedReports || [];
+    messageRows = fetchedMessages || [];
+  }
+
+  const reportsBySession = reportRows.reduce<Record<string, LearningReport | undefined>>((acc, currentReport) => {
+    acc[currentReport.session_id] = currentReport;
+    return acc;
+  }, {});
+  const messagesBySession = messageRows.reduce<Record<string, Message[]>>((acc, currentMessage) => {
+    const mappedMessage = {
+      id: currentMessage.id,
+      role: currentMessage.role,
+      content: currentMessage.content,
+      timestamp: new Date(currentMessage.created_at),
+    } as Message;
+    acc[currentMessage.session_id] = [...(acc[currentMessage.session_id] || []), mappedMessage];
+    return acc;
+  }, {});
+  const parsed = parseInstructionState(student.instructions);
+  const sessionDocuments = sessions.map((session) => ({
+    filename: buildArchiveFilename(session),
+    content: buildSessionArchiveMarkdown({
+      profile: student,
+      session,
+      report: reportsBySession[session.id] || null,
+      messages: messagesBySession[session.id] || [],
+      teacherContext: parsed.teacherContext,
+    }),
+  }));
+
+  return {
+    profile: buildArchiveProfileMarkdown(student),
+    timeline: buildArchiveTimelineMarkdown(sessions, reportsBySession),
+    sessionDocuments,
+  };
+};
+
+const persistStudentArchiveBundle = async (
+  student: UserProfile,
+  archive: { profile: string; timeline: string; sessionDocuments: ArchivedSessionDocument[] },
+) => {
+  const uploads = [
+    uploadMarkdownToHistoryBucket(buildStudentHistoryProfilePath(student.id), archive.profile),
+    uploadMarkdownToHistoryBucket(buildStudentHistoryTimelinePath(student.id), archive.timeline),
+    ...archive.sessionDocuments.map((document) =>
+      uploadMarkdownToHistoryBucket(`${buildStudentHistoryBasePath(student.id)}/sessions/${document.filename}`, document.content),
+    ),
+  ];
+  return Promise.allSettled(uploads);
+};
+
+const loadStudentArchiveBundle = async (student: UserProfile, persist = true) => {
+  try {
+    const [profileContent, timelineContent, sessionListResult] = await Promise.all([
+      downloadMarkdownFromHistoryBucket(buildStudentHistoryProfilePath(student.id)),
+      downloadMarkdownFromHistoryBucket(buildStudentHistoryTimelinePath(student.id)),
+      supabase.storage.from(SUPABASE_HISTORY_BUCKET).list(`${buildStudentHistoryBasePath(student.id)}/sessions`, {
+        limit: 200,
+        sortBy: { column: "name", order: "desc" },
+      }),
+    ]);
+
+    if (sessionListResult.error) throw sessionListResult.error;
+
+    const sessionDocuments = await Promise.all(
+      (sessionListResult.data || [])
+        .filter((item) => item.name)
+        .map(async (item) => ({
+          filename: item.name,
+          content: await downloadMarkdownFromHistoryBucket(`${buildStudentHistoryBasePath(student.id)}/sessions/${item.name}`),
+        })),
+    );
+
+    return {
+      profile: profileContent,
+      timeline: timelineContent,
+      sessionDocuments,
+    };
+  } catch {
+    const archive = await loadStudentArchiveBundleFromDatabase(student);
+    if (persist) {
+      try {
+        await persistStudentArchiveBundle(student, archive);
+      } catch (error) {
+        console.warn("Failed to persist archive bundle:", error);
+      }
+    }
+    return archive;
+  }
 };
 
 const ThemeToggle = ({ theme, toggleTheme }: { theme: string; toggleTheme: () => void }) => (
@@ -961,7 +1180,7 @@ const StudentChat = ({
   };
 
   const generateReport = async () => {
-    if (!activeSessionId || messages.length === 0 || isGenerating) return;
+    if (!activeSessionId || messages.length === 0 || isGenerating || !profile) return;
     setIsGenerating(true);
     
     try {
@@ -1023,6 +1242,7 @@ Provide the report in JSON following this exact field names:
 
       if (error) throw error;
       setReport(data);
+      await loadStudentArchiveBundle(profile, true);
       setActiveTab('report');
       alert('학습 보고서가 생성되었습니다.');
     } catch (err) {
@@ -1437,7 +1657,21 @@ Provide the report in JSON following this exact field names:
 
                    <footer className="pt-10 flex border-t border-highlight justify-between items-center pb-20">
                       <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest italic">Math Tutor AI Insights</p>
-                      <button className="flex items-center gap-2 text-[10px] font-black text-accent hover:underline">
+                      <button
+                        onClick={() =>
+                          exportLearningReportPdf({
+                            title: "AI Learning Analysis Report",
+                            studentName: profile?.name,
+                            classLabel: profile ? getClassLabel(profile) : undefined,
+                            sessionTitle: sessions.find((sessionItem) => sessionItem.id === activeSessionId)?.title,
+                            createdAt: report.created_at,
+                            summary: report.summary,
+                            misconceptions: report.misconceptions,
+                            recommendations: report.recommendations,
+                          })
+                        }
+                        className="flex items-center gap-2 text-[10px] font-black text-accent hover:underline"
+                      >
                          <FileDown size={14} /> PDF로 내보내기
                       </button>
                    </footer>
@@ -1929,6 +2163,9 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
   const [saving, setSaving] = useState(false);
   const [dashboardStudents, setDashboardStudents] = useState<UserProfile[]>([]);
   const [latestSessionsByStudent, setLatestSessionsByStudent] = useState<Record<string, any>>({});
+  const [performanceData, setPerformanceData] = useState(CLASS_PERFORMANCE_DATA);
+  const [conceptData, setConceptData] = useState(UNIT_UNDERSTANDING_DATA);
+  const [insightMessage, setInsightMessage] = useState("최근 학습 데이터가 아직 충분하지 않습니다. 학생들의 첫 대화를 모아 인사이트를 생성해보세요.");
   const [stats, setStats] = useState([
     { label: "전체 학생 수", value: "0", icon: Users, color: "text-blue-600", bg: "bg-blue-50" },
     { label: "오늘 학습 세션", value: "0", icon: MessageSquare, color: "text-green-600", bg: "bg-green-50" },
@@ -1948,21 +2185,24 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
 
         if (studentsError) throw studentsError;
 
-        const allApprovedStudents = (students || []) as UserProfile[];
+        const allApprovedStudents = ((students || []) as UserProfile[]).filter(isTeacherVisibleStudent);
         const approvedStudents = selectedClassKey
           ? allApprovedStudents.filter((student) => getClassKey(student) === selectedClassKey)
           : allApprovedStudents;
         setDashboardStudents(approvedStudents);
 
         const studentIds = approvedStudents.map((student) => student.id);
-        const [{ data: sessions, error: sessionsError }, { data: reports, error: reportsError }] = await Promise.all([
-          studentIds.length
-            ? supabase.from("chat_sessions").select("*").in("user_id", studentIds).order("created_at", { ascending: false })
-            : Promise.resolve({ data: [], error: null } as any),
-          supabase.from("reports").select("*"),
-        ]);
+        const { data: sessions, error: sessionsError } = studentIds.length
+          ? await supabase.from("chat_sessions").select("*").in("user_id", studentIds).order("created_at", { ascending: false })
+          : { data: [], error: null } as any;
 
         if (sessionsError) throw sessionsError;
+
+        const sessionIds = (sessions || []).map((session: any) => session.id);
+        const { data: reports, error: reportsError } = sessionIds.length
+          ? await supabase.from("reports").select("*").in("session_id", sessionIds)
+          : { data: [], error: null } as any;
+
         if (reportsError) throw reportsError;
 
         const latestByStudent = (sessions || []).reduce((acc: Record<string, any>, session: any) => {
@@ -1979,6 +2219,71 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
           const misconceptionText = `${report.misconceptions || ""}`.toLowerCase();
           return misconceptionText.includes("오개념") || misconceptionText.includes("혼동") || misconceptionText.includes("부족") || misconceptionText.includes("필요");
         }).length;
+
+        const monthlyScoreMap = new Map<string, { month: string; total: number; count: number }>();
+        const recentSessions = [...(sessions || [])].sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        recentSessions.forEach((session: any) => {
+          const month = `${new Date(session.created_at).getMonth() + 1}월`;
+          if (!monthlyScoreMap.has(month)) monthlyScoreMap.set(month, { month, total: 0, count: 0 });
+          const bucket = monthlyScoreMap.get(month)!;
+          bucket.count += 1;
+          const matchingReport = reportRows.find((report: any) => report.session_id === session.id);
+          const misconceptionText = `${matchingReport?.misconceptions || ""}`.toLowerCase();
+          const score = matchingReport
+            ? misconceptionText.includes("없음") || misconceptionText.includes("양호")
+              ? 88
+              : misconceptionText.includes("부족") || misconceptionText.includes("혼동") || misconceptionText.includes("오개념")
+                ? 68
+                : 78
+            : 72;
+          bucket.total += score;
+        });
+        const nextPerformanceData = Array.from(monthlyScoreMap.values())
+          .slice(-4)
+          .map((bucket) => ({
+            month: bucket.month,
+            score: Math.round(bucket.total / Math.max(bucket.count, 1)),
+          }));
+        setPerformanceData(nextPerformanceData.length ? nextPerformanceData : CLASS_PERFORMANCE_DATA);
+
+        const conceptBuckets = [
+          { subject: "지수함수", keywords: ["지수"] },
+          { subject: "로그함수", keywords: ["로그", "ln"] },
+          { subject: "삼각함수", keywords: ["삼각", "sin", "cos", "tan"] },
+          { subject: "미분계수", keywords: ["미분계수", "도함수", "합성함수", "미분"] },
+          { subject: "적분", keywords: ["적분", "치환", "부분적분"] },
+        ];
+        const nextConceptData = conceptBuckets.map((bucket) => {
+          const relatedReports = reportRows.filter((report: any) =>
+            bucket.keywords.some((keyword) =>
+              `${report.summary || ""} ${report.misconceptions || ""} ${report.recommendations || ""}`.includes(keyword),
+            ),
+          );
+          if (relatedReports.length === 0) return { subject: bucket.subject, A: 72, fullMark: 100 };
+          const riskReports = relatedReports.filter((report: any) =>
+            /오개념|혼동|부족|어려움|필요/.test(`${report.misconceptions || ""} ${report.recommendations || ""}`),
+          ).length;
+          return {
+            subject: bucket.subject,
+            A: Math.max(45, 92 - Math.round((riskReports / relatedReports.length) * 35)),
+            fullMark: 100,
+          };
+        });
+        setConceptData(nextConceptData);
+
+        const sessionOwnerById = Object.fromEntries((sessions || []).map((session: any) => [session.id, session.user_id]));
+        const riskStudents = approvedStudents.filter((student) =>
+          reportRows.some(
+            (report: any) =>
+              sessionOwnerById[report.session_id] === student.id &&
+              /오개념|혼동|부족|어려움|필요/.test(`${report.misconceptions || ""} ${report.recommendations || ""}`),
+          ),
+        );
+        setInsightMessage(
+          riskStudents.length
+            ? `${riskStudents.slice(0, 3).map((student) => student.name).join(", ")} 학생에게 최근 보충 개입 신호가 포착되었습니다. ${selectedClassKey ? `${selectedClassKey.replace("-", "학년 ")}반` : "현재 선택 학급"} 기준으로 오개념 보고서와 개별 지침을 먼저 확인해보세요.`
+            : "최근 선택한 학급에서는 심각한 위험 신호가 적습니다. 오늘 생성된 보고서와 세션 수를 기준으로 안정적으로 운영 중입니다.",
+        );
 
         setStats([
           { label: "전체 학생 수", value: String(approvedStudents.length), icon: Users, color: "text-blue-600", bg: "bg-blue-50" },
@@ -2152,7 +2457,7 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
         </div>
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={CLASS_PERFORMANCE_DATA}>
+            <BarChart data={performanceData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
               <XAxis 
                 dataKey="month" 
@@ -2170,8 +2475,8 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
                 contentStyle={{ borderRadius: '12px', border: '1px solid #E2E8F0', fontSize: '12px', fontWeight: 800 }}
               />
               <Bar dataKey="score" radius={[4, 4, 0, 0]}>
-                 {CLASS_PERFORMANCE_DATA.map((entry, index) => (
-                   <Cell key={`cell-${index}`} fill={index === CLASS_PERFORMANCE_DATA.length - 1 ? '#4A5568' : '#CBD5E0'} />
+                 {performanceData.map((entry, index) => (
+                   <Cell key={`cell-${index}`} fill={index === performanceData.length - 1 ? '#4A5568' : '#CBD5E0'} />
                  ))}
               </Bar>
             </BarChart>
@@ -2186,7 +2491,7 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
         </div>
         <div className="h-64 flex justify-center">
           <ResponsiveContainer width="100%" height="100%">
-            <RadarChart cx="50%" cy="50%" outerRadius="80%" data={UNIT_UNDERSTANDING_DATA}>
+            <RadarChart cx="50%" cy="50%" outerRadius="80%" data={conceptData}>
               <PolarGrid stroke="#E2E8F0" />
               <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10, fontWeight: 700, fill: '#718096' }} />
               <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
@@ -2250,10 +2555,9 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
            <div className="inline-block px-2 py-1 bg-white/10 rounded text-[10px] font-bold uppercase tracking-widest mb-4">오늘의 인사이트</div>
           <h3 className="text-xl font-bold mb-3">AI 인사이트</h3>
           <p className="text-white/70 text-sm mb-8 leading-relaxed">
-            최근 미분법 단원에서 5명의 학생이 <span className="text-white font-bold">'합성함수 미분'</span> 개념에 어려움을 겪고 있습니다.<br/>
-            추가 보충 자료와 설명이 필요할 것 같습니다.
+            {insightMessage}
           </p>
-          <button className="bg-white text-sidebar font-black px-6 py-3 rounded-lg hover:bg-highlight hover:text-sidebar transition-all text-sm">분석 리포트 확인</button>
+          <Link to="/teacher/analysis" className="inline-flex bg-white text-sidebar font-black px-6 py-3 rounded-lg hover:bg-highlight hover:text-sidebar transition-all text-sm">분석 리포트 확인</Link>
         </div>
         <div className="absolute -bottom-10 -right-10 w-48 h-48 bg-white/5 rounded-full blur-3xl"></div>
       </div>
@@ -2925,11 +3229,31 @@ const TeacherAnalysis = () => {
     </div>
   );
 };
-const TeacherChat = ({ profile, session }: { profile: UserProfile | null, session: any }) => {
+const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProfile | null, session: any, selectedClassKey: string }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [input, setInput] = useState("");
+  const [students, setStudents] = useState<UserProfile[]>([]);
+  const [selectedStudentId, setSelectedStudentId] = useState("");
+
+  const filteredStudents = students.filter((student) => !selectedClassKey || getClassKey(student) === selectedClassKey);
+
+  const fetchStudents = async () => {
+    const { data, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("role", "student")
+      .eq("status", "approved")
+      .order("grade", { ascending: true })
+      .order("class", { ascending: true })
+      .order("number", { ascending: true });
+    if (error) {
+      console.error("Failed to fetch teacher chat students:", error);
+      return;
+    }
+    setStudents(((data || []) as UserProfile[]).filter(isTeacherVisibleStudent));
+  };
 
   const fetchMessages = async (sid: string) => {
     try {
@@ -2952,6 +3276,7 @@ const TeacherChat = ({ profile, session }: { profile: UserProfile | null, sessio
   };
 
   useEffect(() => {
+    fetchStudents();
     const initSession = async () => {
       if (!profile) return;
       // For teachers, we might just want to load the latest pedagogical session or create a new one
@@ -2979,6 +3304,40 @@ const TeacherChat = ({ profile, session }: { profile: UserProfile | null, sessio
     };
     initSession();
   }, [profile]);
+
+  useEffect(() => {
+    if (!filteredStudents.length) {
+      setSelectedStudentId("");
+      return;
+    }
+    if (!selectedStudentId || !filteredStudents.some((student) => student.id === selectedStudentId)) {
+      setSelectedStudentId(filteredStudents[0].id);
+    }
+  }, [selectedStudentId, filteredStudents]);
+
+  const buildTeacherArchiveContext = async () => {
+    const targetStudents = selectedStudentId
+      ? filteredStudents.filter((student) => student.id === selectedStudentId)
+      : filteredStudents.slice(0, 4);
+
+    if (!targetStudents.length) {
+      return "학생 아카이브가 아직 없습니다. 학생이 대화를 시작하고 보고서가 생성되면 참고 근거가 축적됩니다.";
+    }
+
+    const bundles = await Promise.all(
+      targetStudents.map(async (student) => {
+        const archive = await loadStudentArchiveBundle(student, true);
+        return [
+          `# Student: ${student.name}`,
+          archive.profile,
+          archive.timeline,
+          ...archive.sessionDocuments.slice(0, 2).map((document) => document.content),
+        ].join("\n\n");
+      }),
+    );
+
+    return bundles.join("\n\n---\n\n");
+  };
 
   const handleSend = async () => {
     if (!input.trim() || !profile) return;
@@ -3016,18 +3375,24 @@ const TeacherChat = ({ profile, session }: { profile: UserProfile | null, sessio
     await fetchMessages(sid!);
 
     try {
-      const history = messages.map((message) => ({
-        role: message.role === "user" ? "user" : "model",
-        parts: [{ text: message.content }],
-      }));
+      const archiveContext = await buildTeacherArchiveContext();
+      const transcript = [...messages, { id: "draft", role: "user", content: currentInput, timestamp: new Date() } as Message]
+        .map((message) => `${message.role === "assistant" ? "ASSISTANT" : "USER"}: ${message.content}`)
+        .join("\n");
 
-      const chat = ai.chats.create({
+      const response = await ai.models.generateContent({
         model: GEMINI_TEXT_MODEL,
-        config: { systemInstruction: buildTeacherAssistantInstruction(profile) },
-        history,
+        contents: [
+          buildTeacherAssistantInstruction(profile),
+          `Selected class: ${selectedClassKey || "전체 학급"}`,
+          `Selected student: ${filteredStudents.find((student) => student.id === selectedStudentId)?.name || "전체 학생"}`,
+          "Use the following markdown archives as your primary evidence. If evidence is insufficient, say so clearly.",
+          archiveContext,
+          "Conversation so far:",
+          transcript,
+          `Teacher request: ${currentInput}`,
+        ].join("\n\n"),
       });
-
-      const response = await chat.sendMessage({ message: currentInput });
       const resp = response.text || "응답을 받지 못했습니다.";
 
       await supabase
@@ -3050,11 +3415,29 @@ const TeacherChat = ({ profile, session }: { profile: UserProfile | null, sessio
       <div className="px-6 py-6 border-b border-highlight bg-gray-50/20 flex items-center justify-between shrink-0">
         <div>
           <h2 className="text-lg font-black text-ink dark:text-white uppercase tracking-tight">AI 수업 보조 어시스턴트</h2>
-          <p className="text-[10px] text-secondary-text font-bold uppercase tracking-widest">교과 지도 및 학생 분석 도우미</p>
+          <p className="text-[10px] text-secondary-text font-bold uppercase tracking-widest">학생 md 아카이브와 보고서를 근거로 답변합니다</p>
         </div>
         <div className="flex items-center gap-2">
            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
            <span className="text-[10px] font-black text-green-600 uppercase">연결됨</span>
+        </div>
+      </div>
+
+      <div className="border-b border-highlight bg-white px-6 py-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-secondary-text">대상 학생</label>
+            <select value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)} className="w-full rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none">
+              <option value="">선택 학급 전체</option>
+              {filteredStudents.map((student) => (
+                <option key={student.id} value={student.id}>{student.name} / {getClassLabel(student)} / {student.number || "-"}</option>
+              ))}
+            </select>
+          </div>
+          <div className="rounded-2xl border border-highlight bg-paper px-4 py-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-accent">근거 소스</p>
+            <p className="mt-2 text-sm font-semibold text-ink">Supabase DB + {SUPABASE_HISTORY_BUCKET} Markdown 아카이브</p>
+          </div>
         </div>
       </div>
       
@@ -3075,9 +3458,9 @@ const TeacherChat = ({ profile, session }: { profile: UserProfile | null, sessio
         {messages.length === 1 && (
           <div className="flex flex-wrap gap-2 mb-4">
             {[
-              "전체 학생 성취도 분석해줘",
-              "미분법 수업 자료 만들어줘",
-              "개별 지도가 필요한 학생은?"
+              "선택한 학생의 최근 학습 변화를 md 기록 기준으로 요약해줘",
+              "학급 전체에서 공통 오개념을 md 기록 기반으로 정리해줘",
+              "다음 수업 피드백 문구를 학생 기록 근거로 작성해줘"
             ].map(q => (
               <button 
                 key={q}
@@ -3182,6 +3565,87 @@ const TeacherCurriculum = ({ selectedClassKey }: { selectedClassKey: string }) =
           </div>
         ))}
         {filteredUnits.length === 0 && <div className="bg-white rounded-xl border border-highlight p-10 text-center text-sm font-bold text-gray-400">등록된 교육과정이 없습니다.</div>}
+      </div>
+    </div>
+  );
+};
+
+const TeacherSettingsPanel = ({
+  profile,
+  selectedClassKey,
+  pendingCount,
+}: {
+  profile: UserProfile | null;
+  selectedClassKey: string;
+  pendingCount: number;
+}) => {
+  const isAdmin = isAdminUser(profile);
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h2 className="text-3xl font-black text-ink uppercase tracking-tighter">교사 설정</h2>
+        <p className="mt-2 text-xs font-bold uppercase tracking-widest text-secondary-text">운영, 승인, 학급 지침, 자료 관리 기능을 한 곳에서 정리합니다.</p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="rounded-2xl border border-highlight bg-white p-6 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-widest text-secondary-text">계정</p>
+          <p className="mt-3 text-xl font-black text-ink">{profile?.name || "-"}</p>
+          <p className="mt-1 text-sm font-semibold text-secondary-text">{profile?.email || "-"}</p>
+          <p className="mt-4 text-xs font-bold text-accent">{isAdmin ? "관리자 권한 활성" : "일반 교사 계정"}</p>
+        </div>
+        <div className="rounded-2xl border border-highlight bg-white p-6 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-widest text-secondary-text">현재 학급</p>
+          <p className="mt-3 text-xl font-black text-ink">{selectedClassKey ? selectedClassKey.replace("-", "학년 ") + "반" : "전체 학급"}</p>
+          <p className="mt-4 text-xs font-semibold text-secondary-text">상단 학급 선택과 연동됩니다.</p>
+        </div>
+        <div className="rounded-2xl border border-highlight bg-white p-6 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-widest text-secondary-text">승인 대기</p>
+          <p className="mt-3 text-3xl font-black text-ink">{pendingCount}</p>
+          <p className="mt-4 text-xs font-semibold text-secondary-text">신규 가입 승인 요청 건수</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+        <Link to="/teacher/analysis" className="rounded-2xl border border-highlight bg-white p-6 shadow-sm transition-all hover:border-accent hover:shadow-md">
+          <p className="text-[10px] font-black uppercase tracking-widest text-accent">학생 분석</p>
+          <h3 className="mt-3 text-xl font-black text-ink">개별 학생 분석 보기</h3>
+          <p className="mt-2 text-sm font-semibold text-secondary-text">학습 보고서, 대화 기록, md 아카이브를 한 번에 확인합니다.</p>
+        </Link>
+        <Link to="/teacher/curriculum" className="rounded-2xl border border-highlight bg-white p-6 shadow-sm transition-all hover:border-accent hover:shadow-md">
+          <p className="text-[10px] font-black uppercase tracking-widest text-accent">교육과정</p>
+          <h3 className="mt-3 text-xl font-black text-ink">학급별 교육과정 관리</h3>
+          <p className="mt-2 text-sm font-semibold text-secondary-text">단원, 목표, 운영 상태를 정리합니다.</p>
+        </Link>
+        <Link to="/teacher/resources" className="rounded-2xl border border-highlight bg-white p-6 shadow-sm transition-all hover:border-accent hover:shadow-md">
+          <p className="text-[10px] font-black uppercase tracking-widest text-accent">교과자료</p>
+          <h3 className="mt-3 text-xl font-black text-ink">자료 업로드 및 보관</h3>
+          <p className="mt-2 text-sm font-semibold text-secondary-text">수업안, PDF, 예시 문항을 Storage에 보관합니다.</p>
+        </Link>
+        <Link to="/teacher/chat" className="rounded-2xl border border-highlight bg-white p-6 shadow-sm transition-all hover:border-accent hover:shadow-md">
+          <p className="text-[10px] font-black uppercase tracking-widest text-accent">교사 채팅</p>
+          <h3 className="mt-3 text-xl font-black text-ink">md 기반 수업 보조</h3>
+          <p className="mt-2 text-sm font-semibold text-secondary-text">학생 학습 이력을 근거로 피드백과 개입 전략을 만듭니다.</p>
+        </Link>
+        <div className="rounded-2xl border border-highlight bg-white p-6 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-widest text-accent">학급 지침</p>
+          <h3 className="mt-3 text-xl font-black text-ink">상단 대시보드에서 관리</h3>
+          <p className="mt-2 text-sm font-semibold text-secondary-text">대시보드의 “학급 학습 지시문 설정”에서 전체 학생에게 바로 적용합니다.</p>
+        </div>
+        {isAdmin ? (
+          <Link to="/teacher/approvals" className="rounded-2xl border border-highlight bg-white p-6 shadow-sm transition-all hover:border-accent hover:shadow-md">
+            <p className="text-[10px] font-black uppercase tracking-widest text-accent">승인 관리</p>
+            <h3 className="mt-3 text-xl font-black text-ink">회원 승인 처리</h3>
+            <p className="mt-2 text-sm font-semibold text-secondary-text">학생/교사 가입 요청을 승인 또는 반려합니다.</p>
+          </Link>
+        ) : (
+          <div className="rounded-2xl border border-highlight bg-white p-6 shadow-sm">
+            <p className="text-[10px] font-black uppercase tracking-widest text-accent">승인 관리</p>
+            <h3 className="mt-3 text-xl font-black text-ink">관리자 전용</h3>
+            <p className="mt-2 text-sm font-semibold text-secondary-text">가입 승인 기능은 관리자 계정에서만 노출됩니다.</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3674,7 +4138,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
         console.error("Failed to fetch class options:", error);
         return;
       }
-      const nextStudents = (data || []) as UserProfile[];
+      const nextStudents = ((data || []) as UserProfile[]).filter(isTeacherVisibleStudent);
       setTeacherStudents(nextStudents);
       if (!selectedClassKey && nextStudents.length) {
         const firstKey = getClassKey(nextStudents[0]);
@@ -3882,11 +4346,11 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
             ) : <Navigate to="/teacher" replace />} />
             <Route path="analysis" element={<SecureTeacherAnalysis profile={profile} selectedClassKey={selectedClassKey} />} />
             <Route path="analysis/:studentId" element={<SecureTeacherAnalysis profile={profile} selectedClassKey={selectedClassKey} />} />
-            <Route path="chat" element={<div id="teacher-chat-area" className="h-full"><TeacherChat profile={profile} session={session} /></div>} />
+            <Route path="chat" element={<div id="teacher-chat-area" className="h-full"><TeacherChat profile={profile} session={session} selectedClassKey={selectedClassKey} /></div>} />
             <Route path="class" element={<div className="p-8 font-black text-2xl text-ink uppercase">학급 관리 기능 준비 중...</div>} />
             <Route path="curriculum" element={<TeacherCurriculum selectedClassKey={selectedClassKey} />} />
             <Route path="resources" element={<TeacherResource selectedClassKey={selectedClassKey} />} />
-            <Route path="settings" element={<div className="p-8 font-black text-2xl text-ink">교사 설정 준비 중...</div>} />
+            <Route path="settings" element={<TeacherSettingsPanel profile={profile} selectedClassKey={selectedClassKey} pendingCount={pendingCount} />} />
           </Routes>
         </div>
       </main>
@@ -4654,7 +5118,7 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
       console.error("Failed to fetch students:", error);
       return;
     }
-    const nextStudents = data || [];
+    const nextStudents = (data || []).filter(isTeacherVisibleStudent);
     setStudents(nextStudents);
     setSelectedStudent((current) => {
       if (selectedStudentIdFromRoute && nextStudents.some((student) => student.id === selectedStudentIdFromRoute)) {
@@ -4690,46 +5154,11 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
   const fetchArchive = async (student: UserProfile) => {
     setArchiveLoading(true);
     try {
-      const { data: sessionRows, error: sessionError } = await supabase.from("chat_sessions").select("*").eq("user_id", student.id).order("created_at", { ascending: false });
-      if (sessionError) throw sessionError;
-      const nextSessions = sessionRows || [];
-      const sessionIds = nextSessions.map((session) => session.id);
-      let reportRows: LearningReport[] = [];
-      let messageRows: any[] = [];
-      if (sessionIds.length > 0) {
-        const [{ data: fetchedReports, error: reportError }, { data: fetchedMessages, error: messageError }] = await Promise.all([
-          supabase.from("reports").select("*").in("session_id", sessionIds),
-          supabase.from("chat_messages").select("*").in("session_id", sessionIds).order("created_at", { ascending: true }),
-        ]);
-        if (reportError) throw reportError;
-        if (messageError) throw messageError;
-        reportRows = fetchedReports || [];
-        messageRows = fetchedMessages || [];
-      }
-      const reportsBySession = reportRows.reduce<Record<string, LearningReport | undefined>>((acc, currentReport) => {
-        acc[currentReport.session_id] = currentReport;
-        return acc;
-      }, {});
-      const messagesBySession = messageRows.reduce<Record<string, Message[]>>((acc, currentMessage) => {
-        const mappedMessage = { id: currentMessage.id, role: currentMessage.role, content: currentMessage.content, timestamp: new Date(currentMessage.created_at) };
-        acc[currentMessage.session_id] = [...(acc[currentMessage.session_id] || []), mappedMessage];
-        return acc;
-      }, {});
-      const parsed = parseInstructionState(student.instructions);
-      const archiveDocuments = nextSessions.map((session) => ({
-        filename: buildArchiveFilename(session),
-        content: buildSessionArchiveMarkdown({
-          profile: student,
-          session,
-          report: reportsBySession[session.id] || null,
-          messages: messagesBySession[session.id] || [],
-          teacherContext: parsed.teacherContext,
-        }),
-      }));
-      setArchiveProfile(buildArchiveProfileMarkdown(student));
-      setArchiveTimeline(buildArchiveTimelineMarkdown(nextSessions, reportsBySession));
-      setArchiveSessions(archiveDocuments);
-      setExpandedArchiveSession(archiveDocuments[0]?.filename || null);
+      const archive = await loadStudentArchiveBundle(student, true);
+      setArchiveProfile(archive.profile);
+      setArchiveTimeline(archive.timeline);
+      setArchiveSessions(archive.sessionDocuments);
+      setExpandedArchiveSession(archive.sessionDocuments[0]?.filename || null);
     } catch (error) {
       console.error("Failed to fetch archive:", error);
       setArchiveProfile("");
@@ -4820,9 +5249,9 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-[280px_320px_minmax(0,1fr)] h-full min-h-0">
       <div className="min-h-[500px] overflow-hidden rounded-2xl border border-highlight bg-white shadow-sm">
         <div className="space-y-3 border-b border-highlight p-5">
-          <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search students" className="w-full rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
+          <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="학생 이름 또는 이메일 검색" className="w-full rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
           <select value={classFilter} onChange={(e) => setClassFilter(e.target.value)} className="w-full rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none">
-            <option value="">All classes</option>
+            <option value="">전체 학급</option>
             {classOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
           </select>
         </div>
@@ -4869,6 +5298,26 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
           ) : activeTab === "report" ? (
             report ? (
               <div className="space-y-6">
+                <div className="flex justify-end">
+                  <button
+                    onClick={() =>
+                      exportLearningReportPdf({
+                        title: "Teacher Learning Report",
+                        studentName: selectedStudent?.name,
+                        classLabel: selectedStudent ? getClassLabel(selectedStudent) : undefined,
+                        sessionTitle: selectedSession?.title,
+                        createdAt: report.created_at,
+                        summary: report.summary,
+                        misconceptions: report.misconceptions,
+                        recommendations: report.recommendations,
+                      })
+                    }
+                    className="inline-flex items-center gap-2 rounded-xl border border-highlight px-4 py-2 text-xs font-black text-accent"
+                  >
+                    <FileDown size={14} />
+                    PDF 내보내기
+                  </button>
+                </div>
                 <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">학습 요약</p><p className="text-sm font-semibold leading-relaxed text-ink">{report.summary}</p></div>
                 <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">오개념 및 막힌 지점</p><p className="text-sm font-semibold leading-relaxed text-ink">{report.misconceptions}</p></div>
                 <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">추천 개입</p><p className="text-sm font-semibold leading-relaxed text-ink">{report.recommendations}</p></div>
