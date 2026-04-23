@@ -12,7 +12,7 @@ import { Message } from "../../types";
 import { TeacherInstructions } from "../../types";
 import { UserProfile, ai, GEMINI_TEXT_MODEL } from "../../lib/ai";
 import { DEFAULT_TEACHER_INSTRUCTIONS, parseInstructionState, stringifyInstructionState, buildTeacherPrompt } from "../../lib/instructions";
-import { LearningReport, ArchivedSessionDocument, normalizeReportText, exportLearningReportPdf, loadStudentArchiveBundle } from "../../lib/archive";
+import { LearningReport, ArchivedSessionDocument, normalizeReportText, exportLearningReportPdf, loadStudentArchiveBundle, hasSessionActivitySinceReport } from "../../lib/archive";
 import { getClassKey, getClassLabel, isTeacherVisibleStudent } from "../../lib/userUtils";
 import { Type } from "@google/genai";
 
@@ -37,6 +37,7 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
   const [archiveTimeline, setArchiveTimeline] = useState("");
   const [archiveSessions, setArchiveSessions] = useState<ArchivedSessionDocument[]>([]);
   const [expandedArchiveSession, setExpandedArchiveSession] = useState<string | null>(null);
+  const isReportStale = hasSessionActivitySinceReport(messages, report);
 
   const fetchStudents = async () => {
     const { data, error } = await supabase.from("users").select("*").eq("role", "student").eq("status", "approved").order("grade", { ascending: true }).order("class", { ascending: true }).order("number", { ascending: true });

@@ -139,6 +139,19 @@ export const normalizeReportText = (value?: string | null, fallback = "") => {
   return text.replace(/^"(.*)"$/s, "$1").trim();
 };
 
+export const hasSessionActivitySinceReport = (
+  messages: Array<{ timestamp?: Date }>,
+  report: { created_at?: string } | null,
+) => {
+  if (!messages.length) return false;
+  if (!report?.created_at) return true;
+  const latestMessageAt = messages.reduce((latest, message) => {
+    const timestamp = message.timestamp instanceof Date ? message.timestamp.getTime() : 0;
+    return Math.max(latest, timestamp);
+  }, 0);
+  return latestMessageAt > new Date(report.created_at).getTime();
+};
+
 export const exportLearningReportPdf = ({
   title,
   studentName,

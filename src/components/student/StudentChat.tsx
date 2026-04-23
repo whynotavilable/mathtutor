@@ -13,7 +13,7 @@ import { supabase } from "../../supabase";
 import { StudentInstructions, Message } from "../../types";
 import { UserProfile, ai, GEMINI_TEXT_MODEL, buildStudentSystemInstruction } from "../../lib/ai";
 import { TeacherInstructionContext, buildTeacherPrompt } from "../../lib/instructions";
-import { LearningReport, normalizeReportText, exportLearningReportPdf, loadStudentArchiveBundle } from "../../lib/archive";
+import { LearningReport, normalizeReportText, exportLearningReportPdf, loadStudentArchiveBundle, hasSessionActivitySinceReport } from "../../lib/archive";
 import { getClassLabel } from "../../lib/userUtils";
 import { Type } from "@google/genai";
 
@@ -42,6 +42,8 @@ const StudentChat = ({
   const [activeTab, setActiveTab] = useState<'chat' | 'report'>('chat');
   const [report, setReport] = useState<LearningReport | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const isReportStale = hasSessionActivitySinceReport(messages, report);
+  const canGenerateReport = messages.length > 2 && (!report || isReportStale);
 
   const fetchSessions = async () => {
     if (!profile) return;
@@ -170,6 +172,7 @@ ${chatContext}
 
       const reportPayload = {
         session_id: activeSessionId,
+        created_at: new Date().toISOString(),
         summary: normalizeReportText(reportData.summary, "요약 정보가 없습니다."),
         misconceptions: normalizeReportText(reportData.misconceptions, "뚜렷한 오개념이 발견되지 않았습니다."),
         recommendations: normalizeReportText(reportData.recommendations, "현재 학습 흐름을 유지하며 연습을 이어가세요.")
@@ -623,7 +626,7 @@ ${chatContext}
                   </div>
                 </div>
               )}
-              {messages.length > 2 && !report && (
+              {canGenerateReport && (
                 <div className="flex justify-center pt-8 pb-4">
                   <button
                     onClick={generateReport}
@@ -663,6 +666,12 @@ ${chatContext}
                     <h2 className="text-3xl font-black text-ink uppercase tracking-tighter">AI 학습 분석 리포트</h2>
                     <p className="text-[11px] text-secondary-text font-bold uppercase tracking-widest">{new Date(report.created_at).toLocaleDateString()} • {messages.length}개의 대화 분석</p>
                   </header>
+
+                  {isReportStale && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-700">
+                      이 보고서 생성 이후 새 대화가 있어 다시 생성할 수 있습니다.
+                    </div>
+                  )}
 
                   <div className="grid gap-8">
                     <section className="bg-white rounded-3xl border border-highlight p-8 shadow-sm">
@@ -708,6 +717,16 @@ ${chatContext}
 
                   <footer className="pt-10 flex border-t border-highlight justify-between items-center pb-20">
                     <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest italic">AI 제안</p>
+                    {isReportStale && (
+                      <button
+                        onClick={generateReport}
+                        disabled={isGenerating}
+                        className="flex items-center gap-2 rounded-xl border border-highlight px-4 py-2 text-xs font-black text-accent disabled:opacity-50"
+                      >
+                        {isGenerating ? <RefreshCcw size={14} className="animate-spin" /> : <BookOpenCheck size={14} />}
+                        {isGenerating ? "생성 중..." : "보고서 다시 생성"}
+                      </button>
+                    )}
                     <button
                       onClick={() =>
                         exportLearningReportPdf({

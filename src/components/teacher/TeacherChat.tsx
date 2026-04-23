@@ -7,6 +7,7 @@ import { Message } from "../../types";
 import { UserProfile, ai, GEMINI_TEXT_MODEL, buildTeacherAssistantInstruction } from "../../lib/ai";
 import { SUPABASE_HISTORY_BUCKET, loadStudentArchiveBundle } from "../../lib/archive";
 import { getClassKey, getClassLabel, isTeacherVisibleStudent } from "../../lib/userUtils";
+import { loadTeacherResourceCards, TeacherResourceItem } from "../../lib/resources";
 
 const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProfile | null, session: any, selectedClassKey: string }) => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -15,6 +16,7 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
   const [input, setInput] = useState("");
   const [students, setStudents] = useState<UserProfile[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [resourceCards, setResourceCards] = useState<TeacherResourceItem[]>([]);
 
   const filteredStudents = students.filter((student) => !selectedClassKey || getClassKey(student) === selectedClassKey);
 
@@ -56,6 +58,12 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
 
   useEffect(() => {
     fetchStudents();
+    loadTeacherResourceCards()
+      .then(setResourceCards)
+      .catch((error) => {
+        console.error("Failed to fetch teacher resources:", error);
+        setResourceCards([]);
+      });
     const initSession = async () => {
       if (!profile) return;
       const { data, error } = await supabase
@@ -116,6 +124,58 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
     return bundles.join("\n\n---\n\n");
   };
 
+  const buildTeacherResourceContext = (question: string) => {
+    const tokens = question
+      .toLowerCase()
+      .split(/[\s,./!?()[\]{}:;]+/)
+      .map((token) => token.trim())
+      .filter((token) => token.length > 1);
+
+    const student = filteredStudents.find((candidate) => candidate.id === selectedStudentId);
+    const scopedResources = resourceCards.filter((item) => {
+      const classMatch = !selectedClassKey || !item.classKey || item.classKey === selectedClassKey;
+      const gradeMatch = !student || !item.gradeLabel || item.gradeLabel.includes(`${student.grade}`);
+      return classMatch && gradeMatch;
+    });
+
+    const ranked = scopedResources
+      .map((item) => {
+        const haystack = [
+          item.name,
+          item.description,
+          item.subject,
+          item.unit,
+          item.keyConcepts,
+          item.importantExamples,
+          item.commonMisconceptions,
+        ]
+          .join(" ")
+          .toLowerCase();
+        const score = tokens.reduce((total, token) => total + (haystack.includes(token) ? 1 : 0), 0)
+          + (selectedClassKey && item.classKey === selectedClassKey ? 2 : 0);
+        return { item, score };
+      })
+      .filter(({ score }) => score > 0 || tokens.length === 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 4)
+      .map(({ item }) =>
+        [
+          `자료명: ${item.name}`,
+          item.subject ? `과목: ${item.subject}` : "",
+          item.gradeLabel ? `학년: ${item.gradeLabel}` : "",
+          item.unit ? `단원: ${item.unit}` : "",
+          item.description ? `자료 설명: ${item.description}` : "",
+          item.keyConcepts ? `핵심 개념: ${item.keyConcepts}` : "",
+          item.importantExamples ? `중요 문제/예시: ${item.importantExamples}` : "",
+          item.commonMisconceptions ? `자주 나오는 오개념: ${item.commonMisconceptions}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+
+    return ranked.length ? ranked.join("\n\n---\n\n") : "연결된 교과자료 메타데이터가 없습니다.";
+  };
+
   const handleSend = async () => {
     if (!input.trim() || !profile) return;
     setLoading(true);
@@ -153,6 +213,7 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
 
     try {
       const archiveContext = await buildTeacherArchiveContext();
+      const resourceContext = buildTeacherResourceContext(currentInput);
       const transcript = [...messages, { id: "draft", role: "user", content: currentInput, timestamp: new Date() } as Message]
         .map((message) => `${message.role === "assistant" ? "ASSISTANT" : "USER"}: ${message.content}`)
         .join("\n");
@@ -165,6 +226,8 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
           `Selected student: ${filteredStudents.find((student) => student.id === selectedStudentId)?.name || "전체 학생"}`,
           "Use the following markdown archives as your primary evidence. If evidence is insufficient, say so clearly.",
           archiveContext,
+          "Use the following teaching material notes as your secondary evidence source.",
+          resourceContext,
           "Conversation so far:",
           transcript,
           `Teacher request: ${currentInput}`,
