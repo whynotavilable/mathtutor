@@ -35,6 +35,7 @@ const StudentChat = ({
   const [isTyping, setIsTyping] = useState(false);
   const [input, setInput] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -328,7 +329,7 @@ ${chatContext}
       });
 
       const response = await chat.sendMessage({ message: currentInput });
-      const botContent = response.text ?? '응답을 받지 못했습니다.';
+      const botContent = response.text ?? '답변을 받지 못했습니다. 질문을 다시 입력해 보세요.';
 
       setLoading(false);
       setIsTyping(true);
@@ -363,7 +364,7 @@ ${chatContext}
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: `오류: ${err?.message ?? 'AI 연결 실패'}`,
+        content: 'AI 튜터에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.',
         timestamp: new Date(),
       }]);
       setLoading(false);
@@ -414,16 +415,43 @@ ${chatContext}
   };
 
   return (
-    <div className="flex h-full gap-6 relative">
+    <div className="flex h-full relative">
+      {/* Mobile sidebar overlay */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsSidebarOpen(false)}
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 md:hidden"
+          />
+        )}
+      </AnimatePresence>
+
       {/* Search/History Sidebar inside chat */}
-      <div className="w-64 bg-white dark:bg-gray-800 rounded-xl border border-highlight flex flex-col overflow-hidden shadow-sm shrink-0" id="student-chat-history">
+      <div
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 w-72 bg-white dark:bg-gray-800 border-r border-highlight flex flex-col overflow-hidden shadow-lg shrink-0 transition-transform duration-300",
+          "md:relative md:inset-auto md:z-0 md:w-56 lg:w-64 md:rounded-xl md:border md:shadow-sm md:translate-x-0",
+          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+        id="student-chat-history"
+      >
         <div className="p-4 border-b border-highlight bg-gray-50/30">
+          <div className="flex items-center justify-between mb-4 md:hidden">
+            <span className="text-xs font-black text-ink uppercase tracking-widest">대화 목록</span>
+            <button onClick={() => setIsSidebarOpen(false)} className="p-2 text-secondary-text hover:text-accent transition-colors">
+              <X size={18} />
+            </button>
+          </div>
           <button
             onClick={() => {
               setActiveSessionId(null);
+              setIsSidebarOpen(false);
               alert('새 대화를 시작합니다.');
             }}
-            className="w-full py-2.5 bg-accent text-white rounded-lg font-black text-[10px] uppercase tracking-widest shadow-lg shadow-accent/20 hover:scale-[1.02] active:scale-95 transition-all mb-4 flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-2.5 bg-accent text-white rounded-lg font-black text-xs uppercase tracking-widest shadow-lg shadow-accent/20 hover:scale-[1.02] active:scale-95 transition-all mb-4 flex items-center justify-center gap-2 cursor-pointer"
           >
             <Plus size={14} /> 새 대화 시작
           </button>
@@ -439,10 +467,10 @@ ${chatContext}
         <div className="flex-1 overflow-y-auto">
           <div className="p-3 space-y-1">
             <div className="px-2 py-1 mb-2">
-              <span className="text-[10px] font-bold text-secondary-text uppercase tracking-widest leading-none">최근 대화</span>
+              <span className="text-xs font-bold text-secondary-text uppercase tracking-widest leading-none">최근 대화</span>
             </div>
             {sessions.length === 0 ? (
-              <div className="p-4 text-center text-[10px] text-gray-400 font-bold italic">
+              <div className="p-4 text-center text-xs text-gray-400 font-bold italic">
                 첫 대화를 시작해 보세요!
               </div>
             ) : sessions.map((s) => (
@@ -454,10 +482,10 @@ ${chatContext}
                 )}
               >
                 <div className="absolute right-2 top-2 z-10 flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                  <button type="button" onClick={(e) => { e.stopPropagation(); handleRenameSession(s); }} className="rounded-md p-1 text-secondary-text hover:bg-white hover:text-accent" title="대화 제목 수정">
+                  <button type="button" onClick={(e) => { e.stopPropagation(); handleRenameSession(s); }} className="rounded-md p-2 text-secondary-text hover:bg-white hover:text-accent" title="대화 제목 수정">
                     <Pencil size={12} />
                   </button>
-                  <button type="button" onClick={(e) => { e.stopPropagation(); handleDeleteSession(s); }} className="rounded-md p-1 text-secondary-text hover:bg-white hover:text-red-500" title="대화 삭제">
+                  <button type="button" onClick={(e) => { e.stopPropagation(); handleDeleteSession(s); }} className="rounded-md p-2 text-secondary-text hover:bg-white hover:text-red-500" title="대화 삭제">
                     <X size={12} />
                   </button>
                 </div>
@@ -465,6 +493,7 @@ ${chatContext}
                   type="button"
                   onClick={() => {
                     setActiveSessionId(s.id);
+                    setIsSidebarOpen(false);
                     alert(`'${s.title}' 대화로 이동합니다.`);
                   }}
                   className="w-full text-left pr-12"
@@ -479,14 +508,21 @@ ${chatContext}
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 rounded-xl border border-highlight overflow-hidden shadow-sm relative" id="student-chat-area">
-        <header className="px-6 py-4 border-b border-highlight flex justify-between items-center bg-white dark:bg-gray-800 z-10 shrink-0">
-          <div className="flex items-center gap-6">
+      <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 rounded-xl border border-highlight overflow-hidden shadow-sm relative md:ml-4 lg:ml-6" id="student-chat-area">
+        <header className="px-4 md:px-6 py-4 border-b border-highlight flex justify-between items-center bg-white dark:bg-gray-800 z-10 shrink-0">
+          <div className="flex items-center gap-3 md:gap-6">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-2 md:hidden text-secondary-text hover:text-accent transition-colors -ml-1"
+              title="대화 목록 열기"
+            >
+              <Plus size={20} />
+            </button>
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-paper flex items-center justify-center text-accent"><Bot size={18} /></div>
               <div className="hidden sm:block">
                 <h3 className="text-sm font-bold text-ink">수학 AI 튜터</h3>
-                <p className="text-[10px] text-green-500 font-bold flex items-center gap-1"><span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span> 질문 대기 중</p>
+                <p className="text-xs text-green-500 font-bold flex items-center gap-1"><span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span> 질문 대기 중</p>
               </div>
             </div>
 
@@ -495,7 +531,7 @@ ${chatContext}
                 <button
                   onClick={() => setActiveTab('chat')}
                   className={cn(
-                    "px-4 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
+                    "px-4 rounded-lg text-xs font-black uppercase tracking-widest transition-all cursor-pointer",
                     activeTab === 'chat' ? "bg-white text-accent shadow-sm" : "text-secondary-text hover:text-accent"
                   )}
                 >
@@ -504,7 +540,7 @@ ${chatContext}
                 <button
                   onClick={() => setActiveTab('report')}
                   className={cn(
-                    "px-4 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
+                    "px-4 rounded-lg text-xs font-black uppercase tracking-widest transition-all cursor-pointer",
                     activeTab === 'report' ? "bg-white text-accent shadow-sm" : "text-secondary-text hover:text-accent"
                   )}
                 >
@@ -517,7 +553,7 @@ ${chatContext}
             id="student-settings-btn"
             onClick={() => setShowSettings(!showSettings)}
             className={cn(
-              "px-4 py-2 rounded-lg transition-all border font-black text-[10px] uppercase tracking-widest shadow-sm cursor-pointer",
+              "px-4 py-2 rounded-lg transition-all border font-black text-xs uppercase tracking-widest shadow-sm cursor-pointer",
               showSettings ? "bg-accent text-white border-accent" : "bg-white text-secondary-text border-highlight hover:border-accent hover:text-accent"
             )}
           >
@@ -529,11 +565,29 @@ ${chatContext}
           {activeTab === 'chat' ? (
             <div className="space-y-6">
               {messages.length === 0 && (
-                <div className="h-full py-20 flex flex-col items-center justify-center text-center p-10 space-y-6 opacity-30">
-                  <Bot size={60} className="text-gray-400" />
-                  <div>
+                <div className="h-full py-20 flex flex-col items-center justify-center text-center p-10 space-y-6">
+                  <Bot size={60} className="text-gray-400 opacity-30" />
+                  <div className="opacity-30">
                     <h4 className="text-xl font-black text-ink uppercase tracking-tight">수학 AI 튜터와 학습을 시작하세요</h4>
                     <p className="text-xs font-bold text-secondary-text mt-2">지금 바로 질문을 입력하거나 파일을 업로드해 보세요.</p>
+                  </div>
+                  <div className="space-y-3 w-full max-w-sm">
+                    <p className="text-[10px] font-black text-secondary-text uppercase tracking-widest flex items-center justify-center gap-1.5">
+                      <span>💡</span> 이렇게 시작해 보세요
+                    </p>
+                    {[
+                      "경우의 수가 뭔지 설명해줘",
+                      "이 개념이 잘 이해가 안 돼",
+                      "문제 풀다가 막혔어",
+                    ].map((text) => (
+                      <button
+                        key={text}
+                        onClick={() => setInput(text)}
+                        className="w-full text-left px-4 py-3 bg-white border border-highlight rounded-xl text-xs font-semibold text-ink hover:border-accent hover:text-accent transition-all shadow-sm"
+                      >
+                        {text}
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}
@@ -551,7 +605,7 @@ ${chatContext}
                       </ReactMarkdown>
                     </div>
                   </div>
-                  <span className="text-[10px] text-secondary-text mt-1.5 font-medium px-1">
+                  <span className="text-xs text-secondary-text mt-1.5 font-medium px-1">
                     {m.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
@@ -560,7 +614,7 @@ ${chatContext}
                 <div className="flex flex-col max-w-[85%] mr-auto items-start animate-in fade-in slide-in-from-bottom-2">
                   <div className="p-4 rounded-2xl text-sm leading-relaxed shadow-sm bg-[#F7FAFC] text-ink border border-highlight rounded-tl-none flex items-center gap-2">
                     <Bot size={16} className="text-accent animate-pulse" />
-                    <span className="text-secondary-text font-bold">AI가 생각 중</span>
+                    <span className="text-secondary-text font-bold">답변을 준비하고 있어요...</span>
                     <span className="flex gap-1 items-center">
                       <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, delay: 0 }} className="w-1 h-1 bg-accent rounded-full"></motion.span>
                       <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1.5, delay: 0.3 }} className="w-1 h-1 bg-accent rounded-full"></motion.span>
@@ -574,10 +628,10 @@ ${chatContext}
                   <button
                     onClick={generateReport}
                     disabled={isGenerating}
-                    className="px-8 py-3 bg-paper border border-highlight text-accent rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-accent hover:text-white transition-all shadow-md flex items-center gap-2 group"
+                    className="px-8 py-3 bg-paper border border-highlight text-accent rounded-full text-xs font-black uppercase tracking-widest hover:bg-accent hover:text-white transition-all shadow-md flex items-center gap-2 group"
                   >
                     {isGenerating ? <RefreshCcw size={14} className="animate-spin" /> : <BookOpenCheck size={16} />}
-                    {isGenerating ? "보고서 분석 중..." : "오늘의 학습 종료 및 보고서 생성"}
+                    {isGenerating ? "분석하고 있어요..." : "오늘 학습 마무리하기"}
                   </button>
                 </div>
               )}
@@ -599,20 +653,20 @@ ${chatContext}
                     className="px-10 py-4 bg-accent text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-accent/20 hover:scale-[1.02] transition-all"
                   >
                     {isGenerating ? <RefreshCcw size={16} className="animate-spin mr-2" /> : null}
-                    {isGenerating ? "보고서 분석 중..." : "AI 학습 보고서 생성하기"}
+                    {isGenerating ? "분석하고 있어요..." : "오늘 학습 돌아보기"}
                   </button>
                 </div>
               ) : (
                 <>
                   <header className="space-y-2 border-l-4 border-accent pl-6">
-                    <div className="text-[10px] font-black text-accent uppercase tracking-[0.2em]">Learning Analysis Report</div>
+                    <div className="text-xs font-black text-accent uppercase tracking-[0.2em]">AI 학습 분석 보고서</div>
                     <h2 className="text-3xl font-black text-ink uppercase tracking-tighter">AI 학습 분석 리포트</h2>
                     <p className="text-[11px] text-secondary-text font-bold uppercase tracking-widest">{new Date(report.created_at).toLocaleDateString()} • {messages.length}개의 대화 분석</p>
                   </header>
 
                   <div className="grid gap-8">
                     <section className="bg-white rounded-3xl border border-highlight p-8 shadow-sm">
-                      <h4 className="flex items-center gap-3 text-[10px] font-black text-accent uppercase tracking-widest mb-6">
+                      <h4 className="flex items-center gap-3 text-xs font-black text-accent uppercase tracking-widest mb-6">
                         <Info size={14} /> 학습 내용 요약
                       </h4>
                       <div className="p-6 bg-paper rounded-2xl border border-highlight/50 text-sm text-ink leading-relaxed">
@@ -625,7 +679,7 @@ ${chatContext}
                     </section>
 
                     <section className="bg-white rounded-3xl border border-highlight p-8 shadow-sm">
-                      <h4 className="flex items-center gap-3 text-[10px] font-black text-red-500 uppercase tracking-widest mb-6">
+                      <h4 className="flex items-center gap-3 text-xs font-black text-red-500 uppercase tracking-widest mb-6">
                         <AlertCircle size={14} /> 오개념 및 취약점 분석
                       </h4>
                       <div className="p-6 bg-red-50/30 rounded-2xl border border-red-100/50 text-sm text-ink leading-relaxed">
@@ -639,7 +693,7 @@ ${chatContext}
 
                     <section className="bg-white rounded-3xl border border-highlight p-8 shadow-sm relative overflow-hidden">
                       <div className="absolute top-0 right-0 w-32 h-32 bg-accent/5 rounded-bl-full -mr-16 -mt-16"></div>
-                      <h4 className="flex items-center gap-3 text-[10px] font-black text-green-600 uppercase tracking-widest mb-6">
+                      <h4 className="flex items-center gap-3 text-xs font-black text-green-600 uppercase tracking-widest mb-6">
                         <Lightbulb size={14} /> 추천 학습 방향
                       </h4>
                       <div className="p-6 bg-green-50/30 rounded-2xl border border-green-100/50 text-sm text-ink leading-relaxed">
@@ -653,11 +707,11 @@ ${chatContext}
                   </div>
 
                   <footer className="pt-10 flex border-t border-highlight justify-between items-center pb-20">
-                    <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest italic">Math Tutor AI Insights</p>
+                    <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest italic">AI 제안</p>
                     <button
                       onClick={() =>
                         exportLearningReportPdf({
-                          title: "AI Learning Analysis Report",
+                          title: "AI 학습 분석 보고서",
                           studentName: profile?.name,
                           classLabel: profile ? getClassLabel(profile) : undefined,
                           sessionTitle: sessions.find((sessionItem) => sessionItem.id === activeSessionId)?.title,
@@ -667,7 +721,7 @@ ${chatContext}
                           recommendations: normalizeReportText(report.recommendations),
                         })
                       }
-                      className="flex items-center gap-2 text-[10px] font-black text-accent hover:underline"
+                      className="flex items-center gap-2 text-xs font-black text-accent hover:underline"
                     >
                       <FileDown size={14} /> PDF로 내보내기
                     </button>
@@ -679,7 +733,7 @@ ${chatContext}
         </div>
 
         {activeTab === 'chat' && (
-          <footer className="p-4 border-t border-highlight bg-white dark:bg-gray-800 shrink-0">
+          <footer className="p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] border-t border-highlight bg-white dark:bg-gray-800 shrink-0">
             <div className="flex items-center gap-2 bg-paper dark:bg-gray-900 border border-highlight rounded-xl p-1.5 pl-2 focus-within:ring-1 focus-within:ring-accent transition-all ring-offset-2 ring-offset-white">
               <input
                 type="file"
@@ -733,7 +787,7 @@ ${chatContext}
 
               <div className="p-6 space-y-6 flex-1 overflow-y-auto">
                 <div className="p-4 bg-paper rounded-xl border border-highlight space-y-3">
-                  <p className="text-[10px] font-black text-accent uppercase tracking-widest">학습자 프로필 (읽기 전용)</p>
+                  <p className="text-xs font-black text-accent uppercase tracking-widest">학습자 프로필 (읽기 전용)</p>
                   <div className="space-y-4">
                     {[
                       { label: "현재 학습 목표", val: instructions.currentGoals },
@@ -751,14 +805,14 @@ ${chatContext}
 
                 <div className="space-y-4 pt-4">
                   <div className="flex justify-between items-center p-3 bg-white rounded-xl border border-highlight">
-                    <span className="text-[10px] font-bold text-ink">설명 유도 모드</span>
+                    <span className="text-xs font-bold text-ink">설명 유도 모드</span>
                     <span className={cn("text-[9px] font-black px-2 py-0.5 rounded uppercase", instructions.induceSelfExplanation ? "bg-accent/10 text-accent" : "bg-gray-100 text-gray-400")}>
-                      {instructions.induceSelfExplanation ? "ON" : "OFF"}
+                      {instructions.induceSelfExplanation ? "켜짐" : "꺼짐"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center p-3 bg-white rounded-xl border border-highlight">
-                    <span className="text-[10px] font-bold text-ink">힌트 레벨</span>
-                    <span className="text-[9px] font-black text-accent">LEVEL {instructions.hintLevel}</span>
+                    <span className="text-xs font-bold text-ink">힌트 레벨</span>
+                    <span className="text-[9px] font-black text-accent">{instructions.hintLevel}단계</span>
                   </div>
                 </div>
               </div>

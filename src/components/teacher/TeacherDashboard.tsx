@@ -255,7 +255,7 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
               <header className="px-10 py-8 border-b border-highlight bg-paper/30 flex justify-between items-center">
                 <div>
                   <h3 className="text-2xl font-black text-ink uppercase tracking-tight">학급 공통 학습 지시문</h3>
-                  <p className="text-[10px] text-secondary-text font-bold uppercase tracking-widest mt-1">학급: {selectedClassKey ? selectedClassKey.replace("-", "학년 ") + "반" : "전체 학급"} • AI 튜터 시스템 프로토콜</p>
+                  <p className="text-[10px] text-secondary-text font-bold uppercase tracking-widest mt-1">학급: {selectedClassKey ? selectedClassKey.replace("-", "학년 ") + "반" : "전체 학급"} • AI 튜터 동작 방식</p>
                 </div>
                 <button onClick={() => setShowClassInstructions(false)} className="p-2 hover:bg-paper rounded-full transition-colors"><X size={24} /></button>
               </header>

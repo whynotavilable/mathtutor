@@ -32,7 +32,7 @@ const StudentHistory = ({ profile }: { profile: UserProfile | null }) => {
     <div className="space-y-8 p-4 overflow-y-auto h-full pb-20">
       <div className="flex justify-between items-end">
         <div>
-          <h2 className="text-2xl font-black text-ink uppercase tracking-tighter">My Learning History</h2>
+          <h2 className="text-2xl font-black text-ink uppercase tracking-tighter">학습 기록</h2>
           <p className="text-xs text-secondary-text font-bold">지금까지의 대화 및 학습 기록입니다.</p>
         </div>
         <div className="flex items-center gap-2 text-xs font-bold text-accent">

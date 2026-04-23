@@ -80,7 +80,7 @@ const StudentView = ({
       await fetchProfile(session);
     } catch (err) {
       console.error("Enrollment error:", err);
-      alert("Registration failed. Please try again.");
+      alert("가입 신청에 실패했습니다. 다시 시도해 주세요.");
     }
   };
 
@@ -93,13 +93,13 @@ const StudentView = ({
       <div className="flex h-[calc(100vh-2rem)] items-center justify-center bg-paper rounded-3xl border border-highlight shadow-sm overflow-y-auto py-10">
         <div className="max-w-xl w-full p-10 bg-white rounded-3xl border border-highlight shadow-2xl space-y-8">
           <div className="text-center">
-            <h1 className="text-3xl font-black text-ink uppercase tracking-tighter">Additional Information</h1>
+            <h1 className="text-3xl font-black text-ink uppercase tracking-tighter">학급 정보 입력</h1>
             <p className="text-xs text-secondary-text font-bold mt-2 uppercase tracking-widest">추가 정보를 입력하여 가입을 신청하세요.</p>
           </div>
           <form onSubmit={handleSubmitEnrollment} className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-accent uppercase tracking-widest">이름</label>
+                <label className="text-xs font-black text-accent uppercase tracking-widest">이름</label>
                 <input
                   required
                   value={formData.name}
@@ -109,7 +109,7 @@ const StudentView = ({
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-accent uppercase tracking-widest">학년</label>
+                <label className="text-xs font-black text-accent uppercase tracking-widest">학년</label>
                 <select
                   required
                   value={formData.grade}
@@ -123,9 +123,9 @@ const StudentView = ({
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-accent uppercase tracking-widest">반</label>
+                <label className="text-xs font-black text-accent uppercase tracking-widest">반</label>
                 <input
                   required
                   type="number"
@@ -136,7 +136,7 @@ const StudentView = ({
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-accent uppercase tracking-widest">번호</label>
+                <label className="text-xs font-black text-accent uppercase tracking-widest">번호</label>
                 <input
                   required
                   type="number"
@@ -150,7 +150,7 @@ const StudentView = ({
             <button
               type="submit"
               className="w-full py-4 bg-accent text-white rounded-xl font-black text-sm uppercase tracking-widest hover:bg-sidebar transition-all shadow-xl shadow-accent/10"
-            >Save Information</button>
+            >정보 저장하기</button>
           </form>
         </div>
       </div>
@@ -165,20 +165,20 @@ const StudentView = ({
             <ClipboardCheck size={40} />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-ink uppercase tracking-tighter">Pending Approval</h1>
+            <h1 className="text-2xl font-black text-ink uppercase tracking-tighter">승인 대기 중</h1>
             <p className="text-[11px] text-secondary-text font-bold mt-3 leading-relaxed">
-              가입 신청이 완료되었습니다.<br />
-              선생님이 승인하신 후에 서비스를 이용할 수 있습니다.<br />
-              잠시만 기다려 주세요.
+              신청이 접수되었습니다.<br />
+              선생님이 확인하시면 바로 시작할 수 있어요.<br />
+              승인 후 아래 새로고침 버튼을 눌러주세요.
             </p>
           </div>
           <div className="pt-4 flex flex-col gap-2">
             <button
               onClick={() => fetchProfile(session)}
-              className="flex items-center justify-center gap-2 mx-auto px-4 py-2 bg-paper border border-highlight rounded-xl text-[10px] text-ink font-black uppercase tracking-widest hover:bg-white transition-all"
+              className="flex items-center justify-center gap-2 mx-auto px-4 py-2 bg-paper border border-highlight rounded-xl text-xs text-ink font-black uppercase tracking-widest hover:bg-white transition-all"
             >
               <RefreshCcw size={14} className="text-accent" />
-              Refresh Status
+              새로고침
             </button>
             <p className="text-[9px] text-gray-400 font-bold italic">승인 완료 후 새로고침을 눌러주세요.</p>
           </div>
@@ -195,11 +195,10 @@ const StudentView = ({
             <AlertCircle size={40} />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-ink uppercase tracking-tighter">Request Rejected</h1>
+            <h1 className="text-2xl font-black text-ink uppercase tracking-tighter">학급 정보를 확인해주세요</h1>
             <p className="text-[11px] text-secondary-text font-bold mt-3 leading-relaxed">
-              가입 신청이 거절되었습니다.<br />
-              학급 정보가 올바른지 확인하신 후 다시 신청해 주세요.<br />
-              문의사항은 담당 선생님께 연락 바랍니다.
+              입력하신 학급 정보가 명단과 맞지 않아요.<br />
+              담당 선생님께 확인 후 다시 신청해 주세요.
             </p>
           </div>
           <button
@@ -208,7 +207,7 @@ const StudentView = ({
               fetchProfile(session);
             }}
             className="w-full py-4 bg-red-500 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-red-600 transition-all shadow-xl shadow-red-500/10"
-          >Re-apply for Registration</button>
+          >다시 신청하기</button>
         </div>
       </div>
     );
@@ -235,7 +234,7 @@ const StudentView = ({
         isSidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="px-6 mb-10 flex justify-between items-center">
-          <h1 className="text-xl font-black tracking-tighter text-gray-100 uppercase">Math Tutor</h1>
+          <h1 className="text-xl font-black tracking-tighter text-gray-100 uppercase">수학 AI 튜터</h1>
           <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/60 hover:text-white">
             <X size={20} />
           </button>
@@ -268,7 +267,7 @@ const StudentView = ({
             <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center text-white"><CircleUser size={18} /></div>
             <div className="flex flex-col">
               <span className="font-bold text-xs">{profile?.name || DUMMY_STUDENT.name}</span>
-              <span className="text-[10px] text-white/50">{profile ? `${profile.grade}학년 ${profile.class}반 ${profile.number}번` : DUMMY_STUDENT.class}</span>
+              <span className="text-xs text-white/50">{profile ? `${profile.grade}학년 ${profile.class}반 ${profile.number}번` : DUMMY_STUDENT.class}</span>
             </div>
           </div>
           <button

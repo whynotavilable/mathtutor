@@ -43,7 +43,7 @@ const StudentSettings = ({
   return (
     <div className="max-w-2xl mx-auto space-y-10 py-10">
       <div>
-        <h2 className="text-3xl font-black text-ink uppercase tracking-tighter mb-2">My Profile Settings</h2>
+        <h2 className="text-3xl font-black text-ink uppercase tracking-tighter mb-2">나의 학습 설정</h2>
         <p className="text-xs text-secondary-text font-bold uppercase tracking-widest">나의 학습 성향과 목표를 관리하세요.</p>
       </div>
 
@@ -71,8 +71,9 @@ const StudentSettings = ({
                 onChange={(e) => setInstructions({ ...instructions, hintLevel: parseInt(e.target.value) })}
                 className="flex-1 accent-accent cursor-pointer"
               />
-              <span className="text-[10px] font-black text-ink">Level {instructions.hintLevel}</span>
+              <span className="text-[10px] font-black text-ink">{instructions.hintLevel}단계</span>
             </div>
+            <p className="text-[9px] text-secondary-text font-bold">(1 = 거의 안 줌 · 5 = 충분히 줌)</p>
           </div>
         </div>
 
@@ -100,7 +101,7 @@ const StudentSettings = ({
         {[
           { label: "현재 학습 목표", key: "currentGoals", desc: "도달하고 싶은 목표 (예: 이번 중간고사 1등급)" },
           { label: "선호 설명 방식", key: "preferredStyle", desc: "예: 그림을 통한 설명, 수식을 통한 증명" },
-          { label: "어려운 개념", key: "difficultConcepts", desc: "집중적인 케어가 필요한 부분" }
+          { label: "어려운 개념", key: "difficultConcepts", desc: "더 연습하고 싶은 개념" }
         ].map((item) => (
           <div key={item.key} className="p-8 bg-white border border-highlight rounded-2xl shadow-sm space-y-4">
             <div className="flex justify-between items-start">
@@ -108,7 +109,7 @@ const StudentSettings = ({
                 <label className="text-[10px] font-black text-accent uppercase tracking-widest block mb-1">{item.label}</label>
                 <p className="text-[10px] text-secondary-text font-bold">{item.desc}</p>
               </div>
-              <span className="text-[10px] font-black text-green-500 bg-green-50 px-2 py-0.5 rounded border border-green-100 uppercase tracking-widest">Active</span>
+              <span className="text-[10px] font-black text-green-500 bg-green-50 px-2 py-0.5 rounded border border-green-100 uppercase tracking-widest">활성</span>
             </div>
             <textarea
               value={(instructions as any)[item.key]}

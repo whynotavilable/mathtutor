@@ -94,7 +94,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
       await fetchRequests();
     } catch (err) {
       console.error("Error updating status:", err);
-      alert("Status update failed.");
+      alert("상태 업데이트에 실패했습니다.");
     }
   };
 
@@ -121,7 +121,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
         isSidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="px-6 mb-10 flex justify-between items-center">
-          <h1 className="text-xl font-black tracking-tighter text-gray-100 uppercase">Math Tutor Pro</h1>
+          <h1 className="text-xl font-black tracking-tighter text-gray-100 uppercase">수학 AI 튜터</h1>
           <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/60 hover:text-white">
             <X size={20} />
           </button>
@@ -146,7 +146,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
             </div>
             <div className="flex flex-col">
               <span className="font-bold text-xs">{profile?.name || session?.user?.email?.split('@')[0]} 선생님</span>
-              <span className="text-[10px] text-white/50">{profile?.role === 'teacher' ? '교사' : '사용자'}</span>
+              <span className="text-xs text-white/50">{profile?.role === 'teacher' ? '교사' : '사용자'}</span>
             </div>
           </div>
           <button
@@ -173,7 +173,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
             </select>
           </div>
           <div className="flex items-center gap-4">
-            <span className="hidden sm:inline text-xs font-bold text-secondary-text">현재 학기: 2024년 1학기</span>
+            <span className="hidden sm:inline text-xs font-bold text-secondary-text">{(() => { const now = new Date(); const year = now.getFullYear(); const semester = now.getMonth() + 1 >= 8 ? 2 : 1; return `현재 학기: ${year}년 ${semester}학기`; })()}</span>
           </div>
         </header>
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
@@ -190,10 +190,10 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
                     <table className="w-full text-left border-collapse">
                       <thead className="bg-paper border-b border-highlight">
                         <tr>
-                          <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest">신청일</th>
-                          <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest">회원 정보</th>
-                          <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest">상태</th>
-                          <th className="px-6 py-4 text-[10px] font-black text-accent uppercase tracking-widest text-right">처리</th>
+                          <th className="px-6 py-4 text-xs font-black text-accent uppercase tracking-widest">신청일</th>
+                          <th className="px-6 py-4 text-xs font-black text-accent uppercase tracking-widest">회원 정보</th>
+                          <th className="px-6 py-4 text-xs font-black text-accent uppercase tracking-widest">상태</th>
+                          <th className="px-6 py-4 text-xs font-black text-accent uppercase tracking-widest text-right">처리</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-highlight">
@@ -211,7 +211,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
                                 </div>
                                 <div>
                                   <div className="text-sm font-black text-ink">{req.name}</div>
-                                  <div className="text-[10px] text-secondary-text font-bold">{req.grade}학년 {req.class}반 {req.number}번</div>
+                                  <div className="text-xs text-secondary-text font-bold">{req.grade}학년 {req.class}반 {req.number}번</div>
                                 </div>
                               </div>
                             </td>
@@ -221,12 +221,12 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
                                 req.status === 'pending' ? "bg-paper text-accent" :
                                 req.status === 'approved' ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600"
                               )}>
-                                {req.status}
+                                {req.status === 'pending' ? '승인 대기' : req.status === 'approved' ? '승인됨' : req.status === 'rejected' ? '반려됨' : req.status}
                               </span>
                             </td>
                             <td className="px-6 py-4 text-right">
                               {req.status === 'pending' ? (
-                                <div className="flex justify-end gap-2 text-[10px]">
+                                <div className="flex justify-end gap-2 text-xs">
                                   <button
                                     onClick={() => handleApprove(req.id, false)}
                                     className="px-2 py-1 md:px-3 md:py-1.5 border border-highlight text-red-500 rounded-lg font-black hover:bg-red-50 transition-all uppercase tracking-widest"
@@ -237,7 +237,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any, profile
                                   >승인</button>
                                 </div>
                               ) : (
-                                <span className="text-[10px] text-gray-300 font-bold italic">처리 완료</span>
+                                <span className="text-xs text-gray-300 font-bold italic">처리 완료</span>
                               )}
                             </td>
                           </tr>

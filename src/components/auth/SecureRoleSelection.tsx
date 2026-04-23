@@ -90,7 +90,7 @@ const SecureRoleSelection = () => {
             </div>
             <div className="space-y-1">
               <h1 className="text-3xl font-black text-ink uppercase tracking-tight">Math Tutor</h1>
-              <p className="text-[10px] text-secondary-text font-extrabold uppercase tracking-[0.2em] opacity-60">Authentication System</p>
+              
             </div>
           </div>
 
