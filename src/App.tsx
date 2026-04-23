@@ -283,6 +283,19 @@ const normalizeReportText = (value?: string | null, fallback = "") => {
   return text.replace(/^"(.*)"$/s, "$1").trim();
 };
 
+const hasSessionActivitySinceReport = (
+  messages: Array<{ timestamp?: Date }>,
+  report: { created_at?: string } | null,
+) => {
+  if (!messages.length) return false;
+  if (!report?.created_at) return true;
+  const latestMessageAt = messages.reduce((latest, message) => {
+    const timestamp = message.timestamp instanceof Date ? message.timestamp.getTime() : 0;
+    return Math.max(latest, timestamp);
+  }, 0);
+  return latestMessageAt > new Date(report.created_at).getTime();
+};
+
 const tokenizeSearchText = (value: string) =>
   value
     .toLowerCase()
@@ -1245,6 +1258,8 @@ const StudentChat = ({
   const [activeTab, setActiveTab] = useState<'chat' | 'report'>('chat');
   const [report, setReport] = useState<LearningReport | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const isReportStale = hasSessionActivitySinceReport(messages, report);
+  const canGenerateReport = messages.length > 2 && (!report || isReportStale);
 
   const fetchSessions = async () => {
     if (!profile) return;
@@ -1373,6 +1388,7 @@ ${chatContext}
 
       const reportPayload = {
         session_id: activeSessionId,
+        created_at: new Date().toISOString(),
         summary: normalizeReportText(reportData.summary, "요약 정보가 없습니다."),
         misconceptions: normalizeReportText(reportData.misconceptions, "뚜렷한 오개념이 발견되지 않았습니다."),
         recommendations: normalizeReportText(reportData.recommendations, "현재 학습 흐름을 유지하며 연습을 이어가세요.")
@@ -1779,7 +1795,7 @@ ${chatContext}
                 </div>
               )}
               {/* Report Generation Trigger */}
-              {messages.length > 2 && !report && (
+              {canGenerateReport && (
                 <div className="flex justify-center pt-8 pb-4">
                   <button 
                     onClick={generateReport}
@@ -1787,7 +1803,7 @@ ${chatContext}
                     className="px-8 py-3 bg-paper border border-highlight text-accent rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-accent hover:text-white transition-all shadow-md flex items-center gap-2 group"
                   >
                     {isGenerating ? <RefreshCcw size={14} className="animate-spin" /> : <BookOpenCheck size={16} />}
-                    {isGenerating ? "보고서 분석 중..." : "오늘의 학습 종료 및 보고서 생성"}
+                    {isGenerating ? "보고서 분석 중..." : report ? "새 대화 반영해 보고서 다시 생성" : "오늘의 학습 종료 및 보고서 생성"}
                   </button>
                 </div>
               )}
@@ -1818,6 +1834,7 @@ ${chatContext}
                       <div className="text-[10px] font-black text-accent uppercase tracking-[0.2em]">Learning Analysis Report</div>
                       <h2 className="text-3xl font-black text-ink uppercase tracking-tighter">AI 학습 분석 리포트</h2>
                       <p className="text-[11px] text-secondary-text font-bold uppercase tracking-widest">{new Date(report.created_at).toLocaleDateString()} • {messages.length}개의 대화 분석</p>
+                      {isReportStale && <p className="text-[11px] font-bold text-accent">이 보고서 생성 이후 새 대화가 있어 다시 생성할 수 있습니다.</p>}
                    </header>
 
                    <div className="grid gap-8">
@@ -1867,23 +1884,34 @@ ${chatContext}
 
                    <footer className="pt-10 flex border-t border-highlight justify-between items-center pb-20">
                       <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest italic">Math Tutor AI Insights</p>
-                      <button
-                        onClick={() =>
-                          exportLearningReportPdf({
-                            title: "AI Learning Analysis Report",
-                            studentName: profile?.name,
-                            classLabel: profile ? getClassLabel(profile) : undefined,
-                            sessionTitle: sessions.find((sessionItem) => sessionItem.id === activeSessionId)?.title,
-                            createdAt: report.created_at,
-                            summary: normalizeReportText(report.summary),
-                            misconceptions: normalizeReportText(report.misconceptions),
-                            recommendations: normalizeReportText(report.recommendations),
-                          })
-                        }
-                        className="flex items-center gap-2 text-[10px] font-black text-accent hover:underline"
-                      >
-                         <FileDown size={14} /> PDF로 내보내기
-                      </button>
+                      <div className="flex items-center gap-3">
+                        {isReportStale && (
+                          <button
+                            onClick={generateReport}
+                            disabled={isGenerating}
+                            className="flex items-center gap-2 text-[10px] font-black text-accent hover:underline disabled:opacity-50"
+                          >
+                            {isGenerating ? <RefreshCcw size={14} className="animate-spin" /> : <BookOpenCheck size={14} />} 보고서 다시 생성
+                          </button>
+                        )}
+                        <button
+                          onClick={() =>
+                            exportLearningReportPdf({
+                              title: "AI Learning Analysis Report",
+                              studentName: profile?.name,
+                              classLabel: profile ? getClassLabel(profile) : undefined,
+                              sessionTitle: sessions.find((sessionItem) => sessionItem.id === activeSessionId)?.title,
+                              createdAt: report.created_at,
+                              summary: normalizeReportText(report.summary),
+                              misconceptions: normalizeReportText(report.misconceptions),
+                              recommendations: normalizeReportText(report.recommendations),
+                            })
+                          }
+                          className="flex items-center gap-2 text-[10px] font-black text-accent hover:underline"
+                        >
+                           <FileDown size={14} /> PDF로 내보내기
+                        </button>
+                      </div>
                    </footer>
                 </>
               )}
@@ -5474,6 +5502,7 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
   const [archiveTimeline, setArchiveTimeline] = useState("");
   const [archiveSessions, setArchiveSessions] = useState<ArchivedSessionDocument[]>([]);
   const [expandedArchiveSession, setExpandedArchiveSession] = useState<string | null>(null);
+  const isReportStale = hasSessionActivitySinceReport(messages, report);
 
   const fetchStudents = async () => {
     const { data, error } = await supabase.from("users").select("*").eq("role", "student").eq("status", "approved").order("grade", { ascending: true }).order("class", { ascending: true }).order("number", { ascending: true });
@@ -5667,6 +5696,7 @@ ${chatContext}
       const reportData = JSON.parse(response.text || "{}");
       const reportPayload = {
         session_id: selectedSession.id,
+        created_at: new Date().toISOString(),
         summary: normalizeReportText(reportData.summary, "요약 정보가 없습니다."),
         misconceptions: normalizeReportText(reportData.misconceptions, "뚜렷한 오개념이 발견되지 않았습니다."),
         recommendations: normalizeReportText(reportData.recommendations, "현재 학습 흐름을 유지하며 다음 단계를 준비하세요."),
@@ -5754,7 +5784,7 @@ ${chatContext}
                     className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-xs font-black text-white disabled:opacity-50"
                   >
                     {isGeneratingReport ? <RefreshCcw size={14} className="animate-spin" /> : <BookOpenCheck size={14} />}
-                    {isGeneratingReport ? "생성 중..." : "보고서 다시 생성"}
+                    {isGeneratingReport ? "생성 중..." : isReportStale ? "새 대화 반영해 보고서 다시 생성" : "보고서 다시 생성"}
                   </button>
                   <button
                     onClick={() =>
@@ -5775,6 +5805,11 @@ ${chatContext}
                     PDF 내보내기
                   </button>
                 </div>
+                {isReportStale && (
+                  <div className="rounded-2xl border border-accent/20 bg-accent/5 px-4 py-3 text-sm font-bold text-accent">
+                    이 보고서 생성 이후 새 대화가 추가되었습니다. 다시 생성하면 기존 보고서에 덮어써집니다.
+                  </div>
+                )}
                 <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">학습 요약</p><div className="prose prose-sm max-w-none text-ink"><ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{normalizeReportText(report.summary)}</ReactMarkdown></div></div>
                 <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">오개념 및 막힌 지점</p><div className="prose prose-sm max-w-none text-ink"><ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{normalizeReportText(report.misconceptions)}</ReactMarkdown></div></div>
                 <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-2 text-[10px] font-black uppercase tracking-widest text-accent">추천 개입</p><div className="prose prose-sm max-w-none text-ink"><ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{normalizeReportText(report.recommendations)}</ReactMarkdown></div></div>
