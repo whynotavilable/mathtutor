@@ -4,3 +4,6 @@ data/
 .vercel/
 playwright-home.png
 *.log
+*.zip
+.env.local
+.env
