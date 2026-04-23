@@ -125,6 +125,29 @@ interface TeacherResourceItem {
   description?: string;
   classKey?: string;
   objectPath?: string;
+  subject?: string;
+  gradeLabel?: string;
+  unit?: string;
+  keyConcepts?: string;
+  importantExamples?: string;
+  commonMisconceptions?: string;
+  uploadedBy?: string;
+}
+
+interface TeacherResourceMetadata {
+  title: string;
+  subject: string;
+  gradeLabel: string;
+  unit: string;
+  description: string;
+  keyConcepts: string;
+  importantExamples: string;
+  commonMisconceptions: string;
+  classKey: string;
+  category: TeacherResourceItem["category"];
+  fileName: string;
+  uploadedAt: string;
+  uploadedBy?: string;
 }
 
 import { 
@@ -258,6 +281,63 @@ const normalizeReportText = (value?: string | null, fallback = "") => {
   const text = `${value || fallback}`.trim();
   if (!text) return fallback;
   return text.replace(/^"(.*)"$/s, "$1").trim();
+};
+
+const tokenizeSearchText = (value: string) =>
+  value
+    .toLowerCase()
+    .split(/[\s,./()[\]{}:;!?'"`~|+-]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2);
+
+const loadTeacherResourceCards = async () => {
+  const { data, error } = await supabase.storage.from(SUPABASE_RESOURCE_BUCKET).list("", {
+    limit: 200,
+    sortBy: { column: "name", order: "desc" },
+  });
+
+  if (error) throw error;
+
+  const cards = await Promise.all(
+    (data || [])
+      .filter((item) => item.name && !item.id?.startsWith?.("folder"))
+      .filter((item) => !isResourceMetadataPath(item.name))
+      .map(async (item) => {
+        const parsed = parseResourceObjectPath(item.name);
+        if (!parsed) return null;
+        const metadata = await readResourceMetadata(item.name);
+        if (!metadata) return null;
+        return {
+          objectPath: item.name,
+          classKey: metadata.classKey || "",
+          title: metadata.title || parsed.fileName,
+          subject: metadata.subject || "",
+          gradeLabel: metadata.gradeLabel || "",
+          unit: metadata.unit || "",
+          description: metadata.description || "",
+          keyConcepts: metadata.keyConcepts || "",
+          importantExamples: metadata.importantExamples || "",
+          commonMisconceptions: metadata.commonMisconceptions || "",
+          category: metadata.category || parsed.category,
+          uploadedAt: metadata.uploadedAt || item.created_at || new Date().toISOString(),
+        };
+      }),
+  );
+
+  return cards.filter(Boolean) as Array<{
+    objectPath: string;
+    classKey: string;
+    title: string;
+    subject: string;
+    gradeLabel: string;
+    unit: string;
+    description: string;
+    keyConcepts: string;
+    importantExamples: string;
+    commonMisconceptions: string;
+    category: TeacherResourceItem["category"];
+    uploadedAt: string;
+  }>;
 };
 
 const buildStudentSystemInstruction = (
@@ -424,6 +504,7 @@ const buildSessionArchiveMarkdown = ({
 };
 
 const CURRICULUM_STORAGE_KEY = "MATH_TUTOR_CURRICULUM_UNITS";
+const RESOURCE_METADATA_SUFFIX = "__meta.json";
 const SUPABASE_RESOURCE_BUCKET =
   (import.meta as any).env.VITE_SUPABASE_RESOURCE_BUCKET || "teacher-resources";
 const SUPABASE_HISTORY_BUCKET =
@@ -474,7 +555,11 @@ const writeCurriculumUnits = (units: CurriculumUnit[]) => {
 const buildResourceObjectPath = (classKey: string, category: TeacherResourceItem["category"], fileName: string) =>
   `${classKey || "all"}__${category}__${Date.now()}__${encodeURIComponent(fileName)}`;
 
+const buildResourceMetadataPath = (objectPath: string) => `${objectPath}${RESOURCE_METADATA_SUFFIX}`;
+const isResourceMetadataPath = (path: string) => path.endsWith(RESOURCE_METADATA_SUFFIX);
+
 const parseResourceObjectPath = (path: string) => {
+  if (isResourceMetadataPath(path)) return null;
   const parts = path.split("__");
   if (parts.length < 4) return null;
   const [classKey, category, uploadedAt, ...nameParts] = parts;
@@ -485,6 +570,32 @@ const parseResourceObjectPath = (path: string) => {
     uploadedAt,
     fileName,
   };
+};
+
+const readResourceMetadata = async (objectPath: string) => {
+  const { data, error } = await supabase.storage
+    .from(SUPABASE_RESOURCE_BUCKET)
+    .download(buildResourceMetadataPath(objectPath));
+
+  if (error || !data) return null;
+
+  try {
+    return JSON.parse(await data.text()) as TeacherResourceMetadata;
+  } catch {
+    return null;
+  }
+};
+
+const writeResourceMetadata = async (objectPath: string, metadata: TeacherResourceMetadata) => {
+  const blob = new Blob([JSON.stringify(metadata, null, 2)], { type: "application/json;charset=utf-8" });
+  const { error } = await supabase.storage
+    .from(SUPABASE_RESOURCE_BUCKET)
+    .upload(buildResourceMetadataPath(objectPath), blob, {
+      contentType: "application/json;charset=utf-8",
+      upsert: true,
+    });
+
+  if (error) throw error;
 };
 
 const isTeacherVisibleStudent = (student: UserProfile) => {
@@ -3438,6 +3549,72 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
     return bundles.join("\n\n---\n\n");
   };
 
+  const buildTeacherMaterialContext = async (query: string) => {
+    const cards = await loadTeacherResourceCards();
+    const tokens = tokenizeSearchText(query);
+    const selectedStudent = filteredStudents.find((student) => student.id === selectedStudentId);
+    const relevantCurriculum = readCurriculumUnits()
+      .filter((unit) => unit.active)
+      .filter((unit) => !selectedClassKey || !unit.classKey || unit.classKey === selectedClassKey)
+      .slice(0, 6);
+
+    const scoredCards = cards
+      .filter((card) => !selectedClassKey || !card.classKey || card.classKey === selectedClassKey)
+      .map((card) => {
+        const haystack = [
+          card.title,
+          card.subject,
+          card.gradeLabel,
+          card.unit,
+          card.description,
+          card.keyConcepts,
+          card.importantExamples,
+          card.commonMisconceptions,
+        ]
+          .join(" ")
+          .toLowerCase();
+
+        const tokenScore = tokens.reduce((score, token) => score + (haystack.includes(token) ? 2 : 0), 0);
+        const unitBoost = selectedStudent && card.gradeLabel.includes(selectedStudent.grade || "") ? 1 : 0;
+        const classBoost = selectedClassKey && card.classKey === selectedClassKey ? 2 : 0;
+        const filledFieldsBoost = [card.description, card.keyConcepts, card.importantExamples, card.commonMisconceptions].filter(Boolean).length;
+        return { card, score: tokenScore + unitBoost + classBoost + filledFieldsBoost };
+      })
+      .sort((a, b) => b.score - a.score || new Date(b.card.uploadedAt).getTime() - new Date(a.card.uploadedAt).getTime())
+      .slice(0, 4)
+      .map(({ card }) => [
+        `자료명: ${card.title}`,
+        `과목/학년: ${card.subject || "수학"}${card.gradeLabel ? ` / ${card.gradeLabel}` : ""}`,
+        `단원: ${card.unit || "미입력"}`,
+        `자료 설명: ${card.description || "없음"}`,
+        `핵심 개념: ${card.keyConcepts || "없음"}`,
+        `중요 문제/예시: ${card.importantExamples || "없음"}`,
+        `자주 나오는 오개념: ${card.commonMisconceptions || "없음"}`,
+      ].join("\n"));
+
+    const curriculumContext = relevantCurriculum.length
+      ? relevantCurriculum.map((unit) => `- ${unit.title}: ${unit.goals}`).join("\n")
+      : "활성 교육과정 정보 없음";
+
+    if (!scoredCards.length) {
+      return [
+        "관련 교과자료 근거:",
+        "선택한 조건에 맞는 교과자료 메타데이터가 아직 없습니다.",
+        "",
+        "활성 교육과정:",
+        curriculumContext,
+      ].join("\n");
+    }
+
+    return [
+      "관련 교과자료 근거:",
+      ...scoredCards.map((entry, index) => `## 자료 ${index + 1}\n${entry}`),
+      "",
+      "활성 교육과정:",
+      curriculumContext,
+    ].join("\n\n");
+  };
+
   const handleSend = async () => {
     if (!input.trim() || !profile) return;
     setLoading(true);
@@ -3475,6 +3652,7 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
 
     try {
       const archiveContext = await buildTeacherArchiveContext();
+      const materialContext = await buildTeacherMaterialContext(currentInput);
       const transcript = [...messages, { id: "draft", role: "user", content: currentInput, timestamp: new Date() } as Message]
         .map((message) => `${message.role === "assistant" ? "ASSISTANT" : "USER"}: ${message.content}`)
         .join("\n");
@@ -3487,6 +3665,8 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
           `Selected student: ${filteredStudents.find((student) => student.id === selectedStudentId)?.name || "전체 학생"}`,
           "Use the following markdown archives as your primary evidence. If evidence is insufficient, say so clearly.",
           archiveContext,
+          "Use the following teaching material summaries as secondary evidence for curriculum alignment, examples, and misconception guidance.",
+          materialContext,
           "Conversation so far:",
           transcript,
           `Teacher request: ${currentInput}`,
@@ -3755,6 +3935,16 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [storageError, setStorageError] = useState("");
+  const [resourceDraft, setResourceDraft] = useState({
+    title: "",
+    subject: "수학",
+    gradeLabel: "",
+    unit: "",
+    description: "",
+    keyConcepts: "",
+    importantExamples: "",
+    commonMisconceptions: "",
+  });
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const filteredResources = resources.filter((item) => !selectedClassKey || !item.classKey || item.classKey === selectedClassKey);
@@ -3776,22 +3966,34 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
       return;
     }
 
-    const mappedResources = (data || [])
-      .filter((item) => item.name && !item.id?.startsWith?.("folder"))
-      .map((item) => {
-        const parsed = parseResourceObjectPath(item.name);
-        if (!parsed) return null;
-        return {
-          id: item.id || item.name,
-          name: parsed.fileName,
-          type: item.metadata?.mimetype || "application/octet-stream",
-          size: Number(item.metadata?.size || 0),
-          uploadedAt: item.created_at || new Date(Number(parsed.uploadedAt || Date.now())).toISOString(),
-          category: parsed.category,
-          classKey: parsed.classKey === "all" ? "" : parsed.classKey,
-          objectPath: item.name,
-        } satisfies TeacherResourceItem;
-      })
+    const mappedResources = (await Promise.all(
+      (data || [])
+        .filter((item) => item.name && !item.id?.startsWith?.("folder"))
+        .filter((item) => !isResourceMetadataPath(item.name))
+        .map(async (item) => {
+          const parsed = parseResourceObjectPath(item.name);
+          if (!parsed) return null;
+          const metadata = await readResourceMetadata(item.name);
+          return {
+            id: item.id || item.name,
+            name: metadata?.title || parsed.fileName,
+            type: item.metadata?.mimetype || "application/octet-stream",
+            size: Number(item.metadata?.size || 0),
+            uploadedAt: metadata?.uploadedAt || item.created_at || new Date(Number(parsed.uploadedAt || Date.now())).toISOString(),
+            category: parsed.category,
+            classKey: metadata?.classKey ? (metadata.classKey === "all" ? "" : metadata.classKey) : (parsed.classKey === "all" ? "" : parsed.classKey),
+            objectPath: item.name,
+            description: metadata?.description || "",
+            subject: metadata?.subject || "",
+            gradeLabel: metadata?.gradeLabel || "",
+            unit: metadata?.unit || "",
+            keyConcepts: metadata?.keyConcepts || "",
+            importantExamples: metadata?.importantExamples || "",
+            commonMisconceptions: metadata?.commonMisconceptions || "",
+            uploadedBy: metadata?.uploadedBy || "",
+          } satisfies TeacherResourceItem;
+        })
+    ))
       .filter(Boolean) as TeacherResourceItem[];
 
     setResources(mappedResources);
@@ -3820,11 +4022,36 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
             });
 
           if (error) throw error;
+          await writeResourceMetadata(objectPath, {
+            title: resourceDraft.title.trim() || file.name.replace(/\.[^.]+$/, ""),
+            subject: resourceDraft.subject.trim() || "수학",
+            gradeLabel: resourceDraft.gradeLabel.trim() || (selectedClassKey ? `${selectedClassKey.split("-")[0]}학년` : ""),
+            unit: resourceDraft.unit.trim(),
+            description: resourceDraft.description.trim(),
+            keyConcepts: resourceDraft.keyConcepts.trim(),
+            importantExamples: resourceDraft.importantExamples.trim(),
+            commonMisconceptions: resourceDraft.commonMisconceptions.trim(),
+            classKey: selectedClassKey || "",
+            category,
+            fileName: file.name,
+            uploadedAt: new Date().toISOString(),
+            uploadedBy: "teacher",
+          });
           return objectPath;
         })
       );
       await fetchResources();
       alert(`${uploadResults.length}개 파일을 업로드했습니다.`);
+      setResourceDraft({
+        title: "",
+        subject: "수학",
+        gradeLabel: "",
+        unit: "",
+        description: "",
+        keyConcepts: "",
+        importantExamples: "",
+        commonMisconceptions: "",
+      });
     } catch (error: any) {
       const message = error?.message || "파일 업로드에 실패했습니다.";
       setStorageError(
@@ -3839,7 +4066,7 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
 
   const removeResource = async (item: TeacherResourceItem) => {
     if (!item.objectPath) return;
-    const { error } = await supabase.storage.from(SUPABASE_RESOURCE_BUCKET).remove([item.objectPath]);
+    const { error } = await supabase.storage.from(SUPABASE_RESOURCE_BUCKET).remove([item.objectPath, buildResourceMetadataPath(item.objectPath)]);
     if (error) {
       setStorageError(error.message);
       alert(error.message || "자료 삭제에 실패했습니다.");
@@ -3878,15 +4105,27 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <button onClick={() => inputRef.current?.click()} className="p-10 border-2 border-dashed border-highlight rounded-xl bg-white flex flex-col items-center justify-center text-center gap-4 hover:border-accent hover:bg-paper transition-all cursor-pointer group shadow-sm">
-          <div className="w-14 h-14 bg-paper group-hover:bg-accent group-hover:text-white rounded-full flex items-center justify-center text-accent transition-all border border-highlight">
-            <Plus size={24} />
+        <div className="rounded-xl border border-highlight bg-white p-6 shadow-sm space-y-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <input value={resourceDraft.title} onChange={(e) => setResourceDraft((current) => ({ ...current, title: e.target.value }))} placeholder="자료 제목" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
+            <input value={resourceDraft.unit} onChange={(e) => setResourceDraft((current) => ({ ...current, unit: e.target.value }))} placeholder="단원명" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
+            <input value={resourceDraft.subject} onChange={(e) => setResourceDraft((current) => ({ ...current, subject: e.target.value }))} placeholder="과목" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
+            <input value={resourceDraft.gradeLabel} onChange={(e) => setResourceDraft((current) => ({ ...current, gradeLabel: e.target.value }))} placeholder="학년 표시 예: 3학년" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
           </div>
-          <div>
-            <h4 className="font-black text-sm mb-1 text-ink uppercase tracking-tight">{uploading ? "업로드 중..." : "새 자료 업로드"}</h4>
-            <p className="text-[10px] text-secondary-text font-bold">PDF, 이미지, 문제지, 수업안 파일 업로드</p>
-          </div>
-        </button>
+          <textarea value={resourceDraft.description} onChange={(e) => setResourceDraft((current) => ({ ...current, description: e.target.value }))} placeholder="자료 설명" className="h-20 w-full rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none resize-none" />
+          <textarea value={resourceDraft.keyConcepts} onChange={(e) => setResourceDraft((current) => ({ ...current, keyConcepts: e.target.value }))} placeholder="핵심 개념" className="h-20 w-full rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none resize-none" />
+          <textarea value={resourceDraft.importantExamples} onChange={(e) => setResourceDraft((current) => ({ ...current, importantExamples: e.target.value }))} placeholder="중요 문제/예시" className="h-20 w-full rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none resize-none" />
+          <textarea value={resourceDraft.commonMisconceptions} onChange={(e) => setResourceDraft((current) => ({ ...current, commonMisconceptions: e.target.value }))} placeholder="자주 나오는 오개념" className="h-20 w-full rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none resize-none" />
+          <button onClick={() => inputRef.current?.click()} className="w-full p-6 border-2 border-dashed border-highlight rounded-xl bg-white flex flex-col items-center justify-center text-center gap-4 hover:border-accent hover:bg-paper transition-all cursor-pointer group">
+            <div className="w-14 h-14 bg-paper group-hover:bg-accent group-hover:text-white rounded-full flex items-center justify-center text-accent transition-all border border-highlight">
+              <Plus size={24} />
+            </div>
+            <div>
+              <h4 className="font-black text-sm mb-1 text-ink uppercase tracking-tight">{uploading ? "업로드 중..." : "새 자료 업로드"}</h4>
+              <p className="text-[10px] text-secondary-text font-bold">PDF, 이미지, 문제지, 수업안 파일 업로드</p>
+            </div>
+          </button>
+        </div>
 
         <div className="bg-sidebar text-white p-8 rounded-xl relative overflow-hidden flex flex-col justify-between shadow-lg">
           <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/5 rounded-full blur-3xl"></div>
@@ -3940,6 +4179,16 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
                   item.category === "curriculum" ? "교육과정" : item.category === "example" ? "예시 문항" : "교과자료"
                 }
               </p>
+              {(item.unit || item.keyConcepts || item.commonMisconceptions) && (
+                <div className="mt-3 space-y-1 text-[11px] font-semibold text-secondary-text">
+                  {item.subject && <p><span className="font-black text-ink">과목</span> {item.subject}{item.gradeLabel ? ` / ${item.gradeLabel}` : ""}</p>}
+                  {item.unit && <p><span className="font-black text-ink">단원</span> {item.unit}</p>}
+                  {item.description && <p><span className="font-black text-ink">설명</span> {item.description}</p>}
+                  {item.keyConcepts && <p><span className="font-black text-ink">핵심 개념</span> {item.keyConcepts}</p>}
+                  {item.importantExamples && <p><span className="font-black text-ink">중요 예시</span> {item.importantExamples}</p>}
+                  {item.commonMisconceptions && <p><span className="font-black text-ink">오개념</span> {item.commonMisconceptions}</p>}
+                </div>
+              )}
             </div>
             <div className="flex gap-2">
               <button onClick={() => downloadResource(item)} className="px-4 py-2 rounded-xl border border-highlight text-xs font-black text-accent">다운로드</button>
