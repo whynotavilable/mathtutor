@@ -1,5 +1,5 @@
-﻿import { useState, useEffect, useRef } from "react";
-import { Plus, Database, RefreshCcw } from "lucide-react";
+﻿import { useState, useEffect, useRef, useCallback } from "react";
+import { Plus, Database, RefreshCcw, UploadCloud } from "lucide-react";
 import { supabase } from "../../supabase";
 import {
   TeacherResourceItem,
@@ -17,6 +17,7 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
   const [uploading, setUploading] = useState(false);
   const [storageError, setStorageError] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [resourceDraft, setResourceDraft] = useState({
     title: "",
     subject: "",
@@ -114,6 +115,22 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
     }
   };
 
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  }, []);
+
+  const onDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  }, []);
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    handleFiles(e.dataTransfer.files);
+  }, [resourceDraft, selectedClassKey]);
+
   const removeResource = async (item: TeacherResourceItem) => {
     if (!item.objectPath) return;
     const { error } = await supabase.storage.from(SUPABASE_RESOURCE_BUCKET).remove([
@@ -175,10 +192,32 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
           <textarea value={resourceDraft.keyConcepts} onChange={(e) => setResourceDraft((prev) => ({ ...prev, keyConcepts: e.target.value }))} placeholder="핵심 개념" className="h-24 w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none resize-none" />
           <textarea value={resourceDraft.importantExamples} onChange={(e) => setResourceDraft((prev) => ({ ...prev, importantExamples: e.target.value }))} placeholder="중요 문제/예시" className="h-24 w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none resize-none" />
           <textarea value={resourceDraft.commonMisconceptions} onChange={(e) => setResourceDraft((prev) => ({ ...prev, commonMisconceptions: e.target.value }))} placeholder="자주 나오는 오개념" className="h-24 w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none resize-none" />
-          <button onClick={() => inputRef.current?.click()} className="inline-flex w-full items-center justify-center gap-3 rounded-xl border-2 border-dashed border-highlight bg-paper px-6 py-5 text-sm font-black text-accent transition-all hover:border-accent hover:bg-white">
-            <Plus size={18} />
-            {uploading ? "업로드 중..." : "자료 파일 선택"}
-          </button>
+          <div
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+            onClick={() => !uploading && inputRef.current?.click()}
+            className={`flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-8 transition-all
+              ${isDragOver
+                ? "border-accent bg-accent/5 scale-[1.01]"
+                : "border-highlight bg-paper hover:border-accent hover:bg-white"
+              }
+              ${uploading ? "cursor-not-allowed opacity-60" : ""}
+            `}
+          >
+            <UploadCloud size={28} className={isDragOver ? "text-accent" : "text-secondary-text"} />
+            <div className="text-center">
+              <p className="text-sm font-black text-ink">
+                {uploading ? "업로드 중..." : isDragOver ? "여기에 놓으세요" : "파일을 여기에 끌어다 놓거나"}
+              </p>
+              {!uploading && !isDragOver && (
+                <p className="mt-1 text-xs font-bold text-accent underline underline-offset-2">클릭해서 선택</p>
+              )}
+              {!uploading && (
+                <p className="mt-2 text-[11px] font-semibold text-secondary-text">PDF, 이미지 등 모든 파일 형식 지원</p>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="bg-sidebar text-white p-8 rounded-xl relative overflow-hidden flex flex-col justify-between shadow-lg">
