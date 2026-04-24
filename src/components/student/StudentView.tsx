@@ -232,12 +232,12 @@ const StudentView = ({
       {/* Sidebar */}
       <div className={cn(
         "fixed inset-y-0 left-0 flex flex-col bg-sidebar text-white py-8 flex-shrink-0 z-50 transform transition-all duration-300 overflow-hidden md:relative md:z-0",
-        "w-64",
+        isSidebarCollapsed ? "w-20" : "w-64",
         isSidebarOpen ? "translate-x-0" : "-translate-x-full",
-        isSidebarCollapsed ? "md:w-0 md:-translate-x-full md:py-0 md:border-0" : "md:w-64 md:translate-x-0"
+        "md:translate-x-0"
       )}>
         <div className={cn("mb-10 flex items-center", isSidebarCollapsed ? "justify-center px-3" : "justify-between px-6")}>
-          <h1 className="text-xl font-black tracking-tighter text-gray-100 uppercase">수학 AI 튜터</h1>
+          {!isSidebarCollapsed && <h1 className="text-xl font-black tracking-tighter text-gray-100 uppercase">??? AI ???</h1>}
           <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/60 hover:text-white">
             <X size={20} />
           </button>
@@ -249,6 +249,7 @@ const StudentView = ({
             to="/student"
             active={location.pathname === "/student"}
             onClick={() => setIsSidebarOpen(false)}
+            collapsed={isSidebarCollapsed}
           />
           <SidebarItem
             icon={History}
@@ -256,6 +257,7 @@ const StudentView = ({
             to="/student/history"
             active={location.pathname === "/student/history"}
             onClick={() => setIsSidebarOpen(false)}
+            collapsed={isSidebarCollapsed}
           />
           <SidebarItem
             icon={Settings}
@@ -263,19 +265,24 @@ const StudentView = ({
             to="/student/settings"
             active={location.pathname === "/student/settings"}
             onClick={() => setIsSidebarOpen(false)}
+            collapsed={isSidebarCollapsed}
           />
         </nav>
-        <div className="mt-auto px-6 py-4 border-t border-white/10">
-          <div className="flex items-center gap-3 mb-4">
+        <div className={cn("mt-auto py-4 border-t border-white/10", isSidebarCollapsed ? "px-3" : "px-6")}>
+          <div className={cn("flex items-center mb-4", isSidebarCollapsed ? "justify-center" : "gap-3")}>
             <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center text-white"><CircleUser size={18} /></div>
-            <div className="flex flex-col">
+            {!isSidebarCollapsed && <div className="flex flex-col">
               <span className="font-bold text-xs">{profile?.name || DUMMY_STUDENT.name}</span>
               <span className="text-xs text-white/50">{profile ? `${profile.grade}학년 ${profile.class}반 ${profile.number}번` : DUMMY_STUDENT.class}</span>
-            </div>
+            </div>}
           </div>
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-2 text-xs text-white/50 hover:text-white transition-colors"
+            title={isSidebarCollapsed ? "??????" : undefined}
+            className={cn(
+              "w-full flex items-center text-xs text-white/50 hover:text-white transition-colors",
+              isSidebarCollapsed ? "justify-center" : "gap-2"
+            )}
           >
             <LogOut size={12} /> 로그아웃
           </button>

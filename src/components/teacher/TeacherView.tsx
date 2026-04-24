@@ -108,13 +108,13 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any; profile
       <div
         className={cn(
           "fixed inset-y-0 left-0 flex flex-col bg-sidebar text-white py-8 flex-shrink-0 z-50 transform transition-all duration-300 overflow-hidden md:relative md:z-0",
-          "w-64",
+          isSidebarCollapsed ? "w-20" : "w-64",
           isSidebarOpen ? "translate-x-0" : "-translate-x-full",
-          isSidebarCollapsed ? "md:w-0 md:-translate-x-full md:py-0 md:border-0" : "md:w-64 md:translate-x-0",
+          "md:translate-x-0",
         )}
       >
         <div className="px-6 mb-10 flex justify-between items-center">
-          <h1 className="text-xl font-black tracking-tighter text-gray-100 uppercase">수학 AI 튜터</h1>
+          {!isSidebarCollapsed && <h1 className="text-xl font-black tracking-tighter text-gray-100 uppercase">??? AI ???</h1>}
           <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/60 hover:text-white">
             <X size={20} />
           </button>
@@ -128,8 +128,8 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any; profile
           {isAdmin && <SidebarItem icon={ShieldCheck} label="승인 관리" to="/teacher/approvals" active={location.pathname === "/teacher/approvals"} onClick={() => setIsSidebarOpen(false)} collapsed={isSidebarCollapsed} />}
           <SidebarItem icon={Settings} label="설정" to="/teacher/settings" active={location.pathname === "/teacher/settings"} onClick={() => setIsSidebarOpen(false)} collapsed={isSidebarCollapsed} />
         </nav>
-        <div className="mt-auto px-6 py-4 border-t border-white/10">
-          <div className="flex items-center gap-3 mb-4">
+        <div className={cn("mt-auto py-4 border-t border-white/10", isSidebarCollapsed ? "px-3" : "px-6")}>
+          <div className={cn("flex items-center mb-4", isSidebarCollapsed ? "justify-center" : "gap-3")}>
             <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
               {session?.user?.user_metadata?.avatar_url ? (
                 <img src={session.user.user_metadata.avatar_url} className="w-full h-full rounded-full" referrerPolicy="no-referrer" />
@@ -137,12 +137,19 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any; profile
                 <CircleUser size={18} />
               )}
             </div>
-            <div className="flex flex-col">
+            {!isSidebarCollapsed && <div className="flex flex-col">
               <span className="font-bold text-xs">{profile?.name || session?.user?.email?.split("@")[0]} 선생님</span>
               <span className="text-xs text-white/50">{profile?.role === "teacher" ? "교사" : "사용자"}</span>
-            </div>
+            </div>}
           </div>
-          <button onClick={handleLogout} className="w-full flex items-center gap-2 text-xs text-white/50 hover:text-white transition-colors">
+          <button
+            onClick={handleLogout}
+            title={isSidebarCollapsed ? "??????" : undefined}
+            className={cn(
+              "w-full flex items-center text-xs text-white/50 hover:text-white transition-colors",
+              isSidebarCollapsed ? "justify-center" : "gap-2"
+            )}
+          >
             <LogOut size={12} /> 로그아웃
           </button>
         </div>
