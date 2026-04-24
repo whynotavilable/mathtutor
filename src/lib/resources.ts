@@ -40,12 +40,21 @@ export const RESOURCE_METADATA_SUFFIX = "__meta.json";
 export const SUPABASE_RESOURCE_BUCKET =
   (import.meta as any).env.VITE_SUPABASE_RESOURCE_BUCKET || "teacher-resources";
 
+// 원본 파일명은 메타데이터에 보존. 저장소 키는 안전한 문자(영숫자, -, _)만 사용.
+const safeExt = (fileName: string) => {
+  const ext = fileName.split(".").pop() || "";
+  return ext.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10);
+};
+
 export const buildResourceObjectPath = (
   classKey: string,
   category: TeacherResourceItem["category"],
   fileName: string,
-) =>
-  `${classKey || "all"}__${category}__${Date.now()}__${encodeURIComponent(fileName)}`;
+) => {
+  const ext = safeExt(fileName);
+  const safeClass = (classKey || "all").replace(/[^a-zA-Z0-9-]/g, "-");
+  return `${safeClass}__${category}__${Date.now()}${ext ? "." + ext : ""}`;
+};
 
 export const buildResourceMetadataPath = (objectPath: string) => `${objectPath}${RESOURCE_METADATA_SUFFIX}`;
 export const isResourceMetadataPath = (path: string) => path.endsWith(RESOURCE_METADATA_SUFFIX);
@@ -53,14 +62,14 @@ export const isResourceMetadataPath = (path: string) => path.endsWith(RESOURCE_M
 export const parseResourceObjectPath = (path: string) => {
   if (isResourceMetadataPath(path)) return null;
   const parts = path.split("__");
-  if (parts.length < 4) return null;
-  const [classKey, category, uploadedAt, ...nameParts] = parts;
-  const fileName = decodeURIComponent(nameParts.join("__"));
+  if (parts.length < 3) return null;
+  const [classKey, category, timestampWithExt] = parts;
+  const uploadedAt = timestampWithExt?.split(".")[0] || "";
   return {
     classKey,
     category: category as TeacherResourceItem["category"],
     uploadedAt,
-    fileName,
+    fileName: path,
   };
 };
 
