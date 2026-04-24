@@ -3,7 +3,7 @@ import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
   LayoutDashboard, History, Settings, X, Menu, LogOut, CircleUser,
-  ClipboardCheck, AlertCircle, RefreshCcw
+  ClipboardCheck, AlertCircle, RefreshCcw, PanelLeftClose, PanelLeftOpen
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { supabase } from "../../supabase";
@@ -40,6 +40,7 @@ const StudentView = ({
   }, [profile]);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [formData, setFormData] = useState({
     name: profile?.name || '',
     grade: profile?.grade || '',
@@ -230,10 +231,12 @@ const StudentView = ({
 
       {/* Sidebar */}
       <div className={cn(
-        "fixed inset-y-0 left-0 w-64 flex flex-col bg-sidebar text-white py-8 flex-shrink-0 z-50 transform transition-transform duration-300 md:relative md:translate-x-0 md:z-0",
-        isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        "fixed inset-y-0 left-0 flex flex-col bg-sidebar text-white py-8 flex-shrink-0 z-50 transform transition-all duration-300 overflow-hidden md:relative md:z-0",
+        "w-64",
+        isSidebarOpen ? "translate-x-0" : "-translate-x-full",
+        isSidebarCollapsed ? "md:w-0 md:-translate-x-full md:py-0 md:border-0" : "md:w-64 md:translate-x-0"
       )}>
-        <div className="px-6 mb-10 flex justify-between items-center">
+        <div className={cn("mb-10 flex items-center", isSidebarCollapsed ? "justify-center px-3" : "justify-between px-6")}>
           <h1 className="text-xl font-black tracking-tighter text-gray-100 uppercase">수학 AI 튜터</h1>
           <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/60 hover:text-white">
             <X size={20} />
@@ -288,6 +291,13 @@ const StudentView = ({
               className="p-2 md:hidden text-secondary-text hover:text-accent transition-colors"
             >
               <Menu size={20} />
+            </button>
+            <button
+              onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+              className="hidden md:flex p-2 text-secondary-text hover:text-accent transition-colors"
+              title={isSidebarCollapsed ? "왼쪽 패널 보이기" : "왼쪽 패널 숨기기"}
+            >
+              {isSidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
             </button>
             <span className="text-sm font-bold text-accent uppercase tracking-widest">
               {location.pathname === "/student" && "학습 공간"}
