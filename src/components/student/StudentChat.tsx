@@ -308,41 +308,90 @@ ${chatContext}
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !profile) return;
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
+    const isImage = file.type.startsWith('image/');
+    const isPDF = file.type === 'application/pdf';
+    if (!isImage && !isPDF) {
+      alert('이미지(JPG, PNG 등) 또는 PDF 파일만 업로드할 수 있습니다.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert('파일 크기는 10MB 이하만 가능합니다.');
+      return;
+    }
+
+    setLoading(true);
 
     let sid = activeSessionId;
     if (!sid) {
       const { data, error } = await supabase
         .from('chat_sessions')
-        .insert({
-          user_id: profile.id,
-          title: `파일 분석: ${file.name}`
-        })
-        .select()
-        .single();
-      if (error) return;
+        .insert({ user_id: profile.id, title: `파일 분석: ${file.name}` })
+        .select().single();
+      if (error) { setLoading(false); return; }
       sid = data.id;
       setActiveSessionId(sid);
       fetchSessions();
     }
 
-    const content = file.type.startsWith('image/')
-      ? `![${file.name}](https://picsum.photos/seed/${file.name}/400/300)\n\n업로드된 이미지: **${file.name}**`
-      : `📎 **[${file.name}]** (PDF 업로드 완료)`;
+    const arrayBuffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 8192) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    }
+    const base64 = btoa(binary);
+    const dataUrl = `data:${file.type};base64,${base64}`;
 
-    const { error: msgErr } = await supabase
-      .from('chat_messages')
-      .insert({ session_id: sid, role: 'user', content });
+    const userContent = isImage
+      ? `![${file.name}](${dataUrl})\n\n📷 **${file.name}** 을 업로드했습니다.`
+      : `📎 **${file.name}** (PDF)`;
 
-    if (msgErr) return;
-    fetchMessages(sid!);
+    const userMsgId = crypto.randomUUID();
+    setMessages(prev => [...prev, { id: userMsgId, role: 'user', content: userContent, timestamp: new Date() }]);
+    await supabase.from('chat_messages').insert({ session_id: sid, role: 'user', content: userContent });
 
-    setTimeout(async () => {
-      const resp = `제공해주신 **[${file.name}]** 파일을 확인했습니다. 관련하여 어떤 도움을 드릴까요?`;
-      await supabase
-        .from('chat_messages')
-        .insert({ session_id: sid!, role: 'assistant', content: resp });
-      fetchMessages(sid!);
-    }, 1000);
+    try {
+      const systemInstruction = buildStudentSystemInstruction(instructions, teacherContext, resourceContext);
+      const analysisPrompt = isImage
+        ? '학생이 수학 풀이나 문제 이미지를 업로드했어. 내용을 분석하고 학습자주도성 원칙에 따라 반응해줘.'
+        : `학생이 PDF 문서(${file.name})를 업로드했어. 내용을 분석하고 학습자주도성 원칙에 따라 반응해줘.`;
+
+      const response = await ai.models.generateContent({
+        model: GEMINI_TEXT_MODEL,
+        config: { systemInstruction },
+        contents: [{
+          role: 'user',
+          parts: [
+            { text: analysisPrompt },
+            { inlineData: { mimeType: file.type, data: base64 } }
+          ]
+        }]
+      });
+      const botContent = response.text ?? 'AI가 파일을 분석하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+
+      setIsTyping(true);
+      const aiMsgId = crypto.randomUUID();
+      setMessages(prev => [...prev, { id: aiMsgId, role: 'assistant', content: '', timestamp: new Date() }]);
+      let output = '';
+      for (const char of botContent) {
+        output += char;
+        setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: output } : m));
+        await new Promise(r => setTimeout(r, 15));
+      }
+      await supabase.from('chat_messages').insert({ session_id: sid, role: 'assistant', content: botContent });
+    } catch (err) {
+      console.error('Vision AI 호출 실패:', err);
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(), role: 'assistant',
+        content: 'AI가 파일을 분석하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        timestamp: new Date()
+      }]);
+    } finally {
+      setLoading(false);
+      setIsTyping(false);
+    }
   };
 
   useEffect(() => {
@@ -530,7 +579,6 @@ ${chatContext}
             onClick={() => {
               setActiveSessionId(null);
               setIsSidebarOpen(false);
-              alert('새 대화를 시작합니다.');
             }}
             className="w-full py-2.5 bg-accent text-white rounded-lg font-black text-xs uppercase tracking-widest shadow-lg shadow-accent/20 hover:scale-[1.02] active:scale-95 transition-all mb-4 flex items-center justify-center gap-2 cursor-pointer"
           >
@@ -575,7 +623,6 @@ ${chatContext}
                   onClick={() => {
                     setActiveSessionId(s.id);
                     setIsSidebarOpen(false);
-                    alert(`'${s.title}' 대화로 이동합니다.`);
                   }}
                   className="w-full text-left pr-12"
                 >

@@ -66,7 +66,7 @@ const StudentSettings = ({
             <label className="text-[10px] font-black text-accent uppercase tracking-widest block">힌트 제공 수준</label>
             <div className="flex items-center gap-4">
               <input
-                type="range" min="1" max="3" step="1"
+                type="range" min="1" max="5" step="1"
                 value={instructions.hintLevel}
                 onChange={(e) => setInstructions({ ...instructions, hintLevel: parseInt(e.target.value) })}
                 className="flex-1 accent-accent cursor-pointer"

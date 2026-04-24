@@ -49,6 +49,7 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
   const [saving, setSaving] = useState(false);
   const [dashboardStudents, setDashboardStudents] = useState<UserProfile[]>([]);
   const [latestSessionsByStudent, setLatestSessionsByStudent] = useState<Record<string, any>>({});
+  const [latestReportByStudent, setLatestReportByStudent] = useState<Record<string, any>>({});
   const [performanceData, setPerformanceData] = useState(CLASS_PERFORMANCE_DATA);
   const [conceptData, setConceptData] = useState(UNIT_UNDERSTANDING_DATA);
   const [insightMessage, setInsightMessage] = useState("최근 학습 데이터가 아직 충분하지 않습니다. 학생들의 첫 대화를 모아 인사이트를 생성해보세요.");
@@ -97,6 +98,20 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
         }, {});
 
         setLatestSessionsByStudent(latestByStudent);
+
+        const sessionOwnerById = Object.fromEntries((sessions || []).map((session: any) => [session.id, session.user_id]));
+
+        // 학생별 가장 최근 보고서 인덱싱
+        const reportByStudent: Record<string, any> = {};
+        (reports || []).forEach((report: any) => {
+          const userId = sessionOwnerById[report.session_id];
+          if (!userId) return;
+          const existing = reportByStudent[userId];
+          if (!existing || new Date(report.created_at) > new Date(existing.created_at)) {
+            reportByStudent[userId] = report;
+          }
+        });
+        setLatestReportByStudent(reportByStudent);
 
         const today = new Date().toISOString().slice(0, 10);
         const todaysSessions = (sessions || []).filter((session: any) => (session.created_at || "").slice(0, 10) === today).length;
@@ -157,7 +172,6 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
         });
         setConceptData(nextConceptData);
 
-        const sessionOwnerById = Object.fromEntries((sessions || []).map((session: any) => [session.id, session.user_id]));
         const riskStudents = approvedStudents.filter((student) =>
           reportRows.some(
             (report: any) =>
@@ -221,12 +235,15 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
   };
 
   const getStudentSignal = (student: UserProfile): "green" | "yellow" | "red" => {
-    const latest = latestSessionsByStudent?.[student.id];
-    if (!latest?.created_at) return "red";
-    const daysSince = (Date.now() - new Date(latest.created_at).getTime()) / (1000 * 60 * 60 * 24);
-    if (daysSince <= 7) return "green";
-    if (daysSince <= 21) return "yellow";
-    return "red";
+    const report = latestReportByStudent?.[student.id];
+    if (!report) {
+      return latestSessionsByStudent?.[student.id] ? "yellow" : "red";
+    }
+    const text = `${report.misconceptions || ""} ${report.recommendations || ""}`;
+    if (/교사.*개입|즉각.*지도|직접.*지도|기초.*부터|개념.*자체|전혀.*이해|심각|반드시.*확인/.test(text)) return "red";
+    const misconceptions = (report.misconceptions || "").trim();
+    if (!misconceptions || /없음|양호|잘\s*이해|문제\s*없|우수/.test(misconceptions)) return "green";
+    return "yellow";
   };
 
   return (
@@ -403,7 +420,7 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
           <div className="divide-y divide-highlight">
             {dashboardStudents.length === 0 ? (
               <div className="px-6 py-12 text-center text-sm font-bold text-gray-400">표시할 학생 데이터가 없습니다.</div>
-            ) : dashboardStudents.slice(0, 8).map(s => {
+            ) : dashboardStudents.map(s => {
               const signal = getStudentSignal(s);
               const signalColor = {
                 green: "bg-green-400",
