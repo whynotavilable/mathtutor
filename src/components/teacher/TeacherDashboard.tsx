@@ -220,6 +220,15 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
     }
   };
 
+  const getStudentSignal = (student: UserProfile): "green" | "yellow" | "red" => {
+    const latest = latestSessionsByStudent?.[student.id];
+    if (!latest?.created_at) return "red";
+    const daysSince = (Date.now() - new Date(latest.created_at).getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSince <= 7) return "green";
+    if (daysSince <= 21) return "yellow";
+    return "red";
+  };
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center min-h-[400px]">
       <div className="text-center space-y-4">
@@ -381,15 +390,35 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
         {/* Student List */}
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-highlight overflow-hidden shadow-sm">
           <div className="p-5 border-b border-highlight flex justify-between items-center bg-gray-50/30">
-            <h3 className="font-bold text-sm text-ink uppercase tracking-wide">우리 반 학생 목록</h3>
+            <div className="flex items-center gap-3">
+              <h3 className="font-bold text-sm text-ink uppercase tracking-wide">우리 반 학생 목록</h3>
+              <div className="flex items-center gap-3 text-[11px] font-semibold text-secondary-text">
+                <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-green-400"/>정상</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-yellow-400"/>주의</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-red-500"/>개입필요</span>
+              </div>
+            </div>
             <span className="text-[10px] font-bold text-secondary-text bg-highlight px-2 py-1 rounded">전체 {dashboardStudents.length}명</span>
           </div>
           <div className="divide-y divide-highlight">
             {dashboardStudents.length === 0 ? (
               <div className="px-6 py-12 text-center text-sm font-bold text-gray-400">표시할 학생 데이터가 없습니다.</div>
-            ) : dashboardStudents.slice(0, 8).map(s => (
+            ) : dashboardStudents.slice(0, 8).map(s => {
+              const signal = getStudentSignal(s);
+              const signalColor = {
+                green: "bg-green-400",
+                yellow: "bg-yellow-400",
+                red: "bg-red-500",
+              }[signal];
+              const signalTitle = {
+                green: "정상 학습 중",
+                yellow: "학습 주의 필요",
+                red: "교사 개입 필요",
+              }[signal];
+              return (
               <Link to={`/teacher/analysis/${s.id}`} key={s.id} className="flex items-center justify-between p-4 px-6 hover:bg-paper transition-colors group">
                 <div className="flex items-center gap-3">
+                  <span title={signalTitle} className={`inline-block w-2.5 h-2.5 rounded-full flex-shrink-0 ${signalColor}`} />
                   <div className="w-8 h-8 rounded-full bg-highlight border border-gray-200 flex items-center justify-center text-xs font-bold text-accent">
                     {s.name[0]}
                   </div>
@@ -408,7 +437,8 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
                   <ChevronRight size={16} className="text-gray-300 group-hover:text-accent transition-colors" />
                 </div>
               </Link>
-            ))}
+              );
+            })}
           </div>
         </div>
 

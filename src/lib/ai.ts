@@ -29,6 +29,7 @@ export interface UserProfile {
 export const buildStudentSystemInstruction = (
   instructions: StudentInstructions,
   teacherContext: TeacherInstructionContext,
+  resourceContext?: string,
 ) => {
   const teacherSections = [
     buildTeacherPrompt(teacherContext.classSettings, teacherContext.classInstruction),
@@ -82,7 +83,15 @@ AI가 개념이나 풀이를 제시했을 때, 학생이 그냥 넘어가지 않
 - 학생이 시도하기 전에 풀이를 먼저 보여주지 않는다.
 - 빈 칭찬("잘했어!", "맞아!")으로 대화를 끝내지 않는다.
 - 한 번에 두 개 이상의 힌트를 주지 않는다.
-- 학생 대신 목표나 순서를 정해주지 않는다.`;
+- 학생 대신 목표나 순서를 정해주지 않는다.
+
+## 이모지 사용
+대화 맥락에 따라 이모지를 절제해서 사용한다.
+- 학생이 집중해서 문제를 풀고 있을 때: 이모지 사용하지 않는다.
+- 학생이 의욕이 없거나 포기하려 할 때: 격려 이모지를 적절히 사용한다 (예: 💪 🎯 ✨ 👀).
+- 학습을 잘 마무리했을 때: 한두 개 사용 가능 (예: 🎉 ✅).
+- 힌트나 질문을 던질 때: 💡 하나 정도 허용.
+- 한 메시지에 3개 이상 사용하지 않는다.`;
 
   return [
     base,
@@ -94,6 +103,7 @@ AI가 개념이나 풀이를 제시했을 때, 학생이 그냥 넘어가지 않
     instructions.induceSelfExplanation ? "풀이를 알려주기 전에 학생이 먼저 자신의 생각을 설명하도록 유도한다." : "",
     instructions.repeatNeeded ? "학생이 불확실해 보일 때 핵심 개념과 체크포인트를 반복해준다." : "",
     teacherSections ? `교사 지침:\n${teacherSections}` : "",
+    resourceContext ? `## 교사 업로드 자료\n교사가 이 수업을 위해 업로드한 자료가 있습니다:\n${resourceContext}\n\n학생이 문제 풀이나 예시를 요청하면, 이 자료의 내용을 우선적으로 활용하세요. 자료에 없는 내용은 일반 지식으로 보완하세요.` : "",
   ]
     .filter(Boolean)
     .join("\n\n");

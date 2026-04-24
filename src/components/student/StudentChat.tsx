@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Bot, Plus, Search, Send, Paperclip, RefreshCcw, X, FileText,
-  AlertCircle, Lightbulb, Info, BookOpenCheck, FileDown, Pencil
+  AlertCircle, Lightbulb, Info, BookOpenCheck, FileDown, Pencil,
+  PanelLeftOpen, PanelLeftClose
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
@@ -36,6 +37,8 @@ const StudentChat = ({
   const [input, setInput] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(true);
+  const [resourceContext, setResourceContext] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -128,8 +131,8 @@ const StudentChat = ({
 반드시 지켜야 할 규칙:
 1. 출력 내용은 모두 자연스러운 한국어로 작성합니다.
 2. JSON의 키 이름은 영어 그대로 유지하되, 각 값의 내용은 한국어로만 작성합니다.
-3. summary, misconceptions, recommendations 안에는 마크다운 문법 기호를 넣지 않습니다.
-4. 별표(*), 샵(#), 백틱(\`), 대시 목록(-), 밑줄(_) 같은 마크다운 표시를 쓰지 않습니다.
+3. summary, misconceptions, recommendations 안에는 헤더(#), 굵게(**), 기울임(_) 같은 마크다운 서식을 쓰지 않습니다.
+4. 별표(*), 샵(#), 백틱(\`), 밑줄(_) 같은 강조 표시는 쓰지 않습니다. 단, 숫자 목록(1. 2. 3.)은 허용하며 각 항목 앞에 빈 줄을 넣어도 됩니다.
 5. 불필요한 큰따옴표로 문장을 감싸지 않습니다.
 6. 학생을 평가할 때는 단정적인 비난 대신 관찰 중심으로 씁니다.
 
@@ -143,9 +146,9 @@ ${chatContext}
 
 다음 JSON 형식으로만 응답하세요:
 {
-  "summary": "이번 학습의 핵심 내용과 학생의 이해 정도를 한국어로 요약",
-  "misconceptions": "대화에서 드러난 오개념, 실수, 혼동 지점을 한국어로 설명",
-  "recommendations": "다음 학습 방향과 구체적인 실천 조언을 한국어로 제안"
+  "summary": "오늘 학습한 내용을 정리하되, 잘한 점을 먼저 언급하고 격려하는 톤으로 작성. 학생이 직접 읽는 보고서임.",
+  "misconceptions": "헷갈렸던 부분을 '이 부분이 헷갈릴 수 있어요' 톤으로 설명. 틀렸다고 단정하지 말고, 다시 살펴볼 기회로 표현.",
+  "recommendations": "다음에 도전해볼 것들을 긍정적이고 구체적으로 제안. '~해보세요' 형식으로 작성."
 }`,
         config: {
           responseMimeType: "application/json",
@@ -197,6 +200,78 @@ ${chatContext}
     }
   };
 
+  const generateTeacherReport = async (sessionId: string, sessionMessages: Message[]) => {
+    if (!sessionId || sessionMessages.length === 0 || !profile) return null;
+
+    const chatContext = sessionMessages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
+
+    const response = await ai.models.generateContent({
+      model: GEMINI_TEXT_MODEL,
+      contents: `당신은 대한민국 고등학교 수학 담당 교사를 위한 학습 분석 보조 도구입니다.
+교사가 읽는 보고서이므로 객관적이고 전문적인 어조로 작성합니다.
+
+반드시 지켜야 할 규칙:
+1. 출력 내용은 모두 자연스러운 한국어로 작성합니다.
+2. JSON의 키 이름은 영어 그대로 유지하되, 각 값의 내용은 한국어로만 작성합니다.
+3. 헤더(#), 굵게(**), 기울임(_) 같은 마크다운 서식을 쓰지 않습니다. 숫자 목록(1. 2. 3.)은 허용하며 각 항목 앞에 빈 줄을 넣어도 됩니다.
+4. 관찰 가능한 근거에 기반하여 작성하고, 추측성 단정을 피합니다.
+
+현재 학습 목표: ${instructions.currentGoals || '명시되지 않음'}
+교사 지침:
+${buildTeacherPrompt(teacherContext.classSettings, teacherContext.classInstruction) || '없음'}
+${buildTeacherPrompt(teacherContext.studentSettings, teacherContext.studentInstruction) || ''}
+
+대화 기록:
+${chatContext}
+
+다음 JSON 형식으로만 응답하세요:
+{
+  "summary": "학생의 이번 세션 학습 수준을 객관적으로 평가. 이해도, 풀이 방식, 참여 태도를 관찰 중심으로 기술.",
+  "misconceptions": "대화에서 드러난 구체적 오개념과 그 근거를 서술. 반복된 실수나 혼동 패턴이 있으면 명시.",
+  "recommendations": "교사가 개입해야 할 지점과 구체적 지도 전략을 제안. 보충 개념, 추가 문제 유형, 개별 면담 필요 여부 등을 포함."
+}`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            summary: { type: Type.STRING },
+            misconceptions: { type: Type.STRING },
+            recommendations: { type: Type.STRING }
+          },
+          required: ["summary", "misconceptions", "recommendations"]
+        }
+      }
+    });
+
+    const text = response.text || "{}";
+    return JSON.parse(text) as { summary: string; misconceptions: string; recommendations: string };
+  };
+
+  useEffect(() => {
+    const loadResources = async () => {
+      try {
+        const { loadTeacherResourceCards } = await import("../../lib/resources");
+        const cards = await loadTeacherResourceCards();
+        const classKey = profile ? `${profile.grade}-${profile.class}` : "";
+        const relevant = cards.filter(c => !c.classKey || c.classKey === classKey || c.classKey === "all");
+        if (relevant.length === 0) return;
+        const ctx = relevant.map(c =>
+          [
+            `[${c.name}]`,
+            c.subject ? `과목: ${c.subject}` : "",
+            c.unit ? `단원: ${c.unit}` : "",
+            c.keyConcepts ? `핵심 개념: ${c.keyConcepts}` : "",
+            c.importantExamples ? `중요 문제/예시: ${c.importantExamples}` : "",
+            c.commonMisconceptions ? `자주 나오는 오개념: ${c.commonMisconceptions}` : "",
+          ].filter(Boolean).join("\n")
+        ).join("\n\n---\n\n");
+        setResourceContext(ctx);
+      } catch {}
+    };
+    loadResources();
+  }, [profile]);
+
   useEffect(() => {
     fetchSessions();
   }, [profile]);
@@ -220,6 +295,9 @@ ${chatContext}
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, loading, isTyping]);
+
+  const formatReportText = (text: string) =>
+    text.replace(/([^\n])\n?((\d+)\.\s)/g, "$1\n\n$2");
 
   const fixMathDelimiters = (content: string) => {
     return content
@@ -318,7 +396,7 @@ ${chatContext}
     } catch {}
 
     try {
-      const systemInstruction = buildStudentSystemInstruction(instructions, teacherContext);
+      const systemInstruction = buildStudentSystemInstruction(instructions, teacherContext, resourceContext);
 
       const history = messages.map(m => ({
         role: m.role === 'user' ? 'user' : 'model',
@@ -436,7 +514,7 @@ ${chatContext}
       <div
         className={cn(
           "fixed inset-y-0 left-0 z-50 w-72 bg-white dark:bg-gray-800 border-r border-highlight flex flex-col overflow-hidden shadow-lg shrink-0 transition-transform duration-300",
-          "md:relative md:inset-auto md:z-0 md:w-56 lg:w-64 md:rounded-xl md:border md:shadow-sm md:translate-x-0",
+          `md:relative md:inset-auto md:z-0 md:w-56 lg:w-64 md:rounded-xl md:border md:shadow-sm ${isDesktopSidebarOpen ? "md:translate-x-0 md:flex" : "md:-translate-x-full md:hidden"}`,
           isSidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
         id="student-chat-history"
@@ -520,6 +598,13 @@ ${chatContext}
               title="대화 목록 열기"
             >
               <Plus size={20} />
+            </button>
+            <button
+              onClick={() => setIsDesktopSidebarOpen(v => !v)}
+              className="hidden md:flex items-center p-2 rounded-lg hover:bg-gray-100 text-secondary-text hover:text-accent transition-colors"
+              title={isDesktopSidebarOpen ? "사이드바 닫기" : "사이드바 열기"}
+            >
+              {isDesktopSidebarOpen ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}
             </button>
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-paper flex items-center justify-center text-accent"><Bot size={18} /></div>
@@ -681,7 +766,7 @@ ${chatContext}
                       <div className="p-6 bg-paper rounded-2xl border border-highlight/50 text-sm text-ink leading-relaxed">
                         <div className="prose prose-sm max-w-none">
                           <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-                            {normalizeReportText(report.summary)}
+                            {formatReportText(normalizeReportText(report.summary))}
                           </ReactMarkdown>
                         </div>
                       </div>
@@ -694,7 +779,7 @@ ${chatContext}
                       <div className="p-6 bg-red-50/30 rounded-2xl border border-red-100/50 text-sm text-ink leading-relaxed">
                         <div className="prose prose-sm max-w-none">
                           <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-                            {normalizeReportText(report.misconceptions)}
+                            {formatReportText(normalizeReportText(report.misconceptions))}
                           </ReactMarkdown>
                         </div>
                       </div>
@@ -708,7 +793,7 @@ ${chatContext}
                       <div className="p-6 bg-green-50/30 rounded-2xl border border-green-100/50 text-sm text-ink leading-relaxed">
                         <div className="prose prose-sm max-w-none">
                           <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-                            {normalizeReportText(report.recommendations)}
+                            {formatReportText(normalizeReportText(report.recommendations))}
                           </ReactMarkdown>
                         </div>
                       </div>
