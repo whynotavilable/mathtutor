@@ -18,6 +18,7 @@ import {
   DEFAULT_TEACHER_INSTRUCTIONS
 } from "../../lib/instructions";
 import { getClassKey, getClassLabel, isTeacherVisibleStudent } from "../../lib/userUtils";
+import { getStudentSignal as getStudentSignalStatus, getStudentSignalReason as getStudentSignalReasonText } from "../../lib/studentSignals";
 
 const CLASS_PERFORMANCE_DATA = [
   { month: '3월', score: 65 },
@@ -116,10 +117,9 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
         const today = new Date().toISOString().slice(0, 10);
         const todaysSessions = (sessions || []).filter((session: any) => (session.created_at || "").slice(0, 10) === today).length;
         const reportRows = reports || [];
-        const atRiskCount = reportRows.filter((report: any) => {
-          const misconceptionText = `${report.misconceptions || ""}`.toLowerCase();
-          return misconceptionText.includes("오개념") || misconceptionText.includes("혼동") || misconceptionText.includes("부족") || misconceptionText.includes("필요");
-        }).length;
+        const atRiskCount = approvedStudents.filter((student) =>
+          getStudentSignalStatus(reportByStudent[student.id], Boolean(latestByStudent[student.id])) === "red",
+        ).length;
 
         const monthlyScoreMap = new Map<string, { month: string; total: number; count: number }>();
         const recentSessions = [...(sessions || [])].sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
@@ -172,12 +172,8 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
         });
         setConceptData(nextConceptData);
 
-        const riskStudents = approvedStudents.filter((student) =>
-          reportRows.some(
-            (report: any) =>
-              sessionOwnerById[report.session_id] === student.id &&
-              /오개념|혼동|부족|어려움|필요/.test(`${report.misconceptions || ""} ${report.recommendations || ""}`),
-          ),
+        const riskStudents = approvedStudents.filter(
+          (student) => getStudentSignalStatus(reportByStudent[student.id], Boolean(latestByStudent[student.id])) === "red",
         );
         setInsightMessage(
           riskStudents.length
@@ -235,31 +231,11 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
   };
 
   const getStudentSignal = (student: UserProfile): "green" | "yellow" | "red" => {
-    const report = latestReportByStudent?.[student.id];
-    if (!report) {
-      return latestSessionsByStudent?.[student.id] ? "yellow" : "red";
-    }
-    const text = `${report.misconceptions || ""} ${report.recommendations || ""}`;
-    if (/교사.*개입|즉각.*지도|직접.*지도|기초.*부터|개념.*자체|전혀.*이해|심각|반드시.*확인/.test(text)) return "red";
-    const misconceptions = (report.misconceptions || "").trim();
-    if (!misconceptions || /없음|양호|잘\s*이해|문제\s*없|우수/.test(misconceptions)) return "green";
-    return "yellow";
+    return getStudentSignalStatus(latestReportByStudent?.[student.id], Boolean(latestSessionsByStudent?.[student.id]));
   };
 
   const getStudentSignalReason = (student: UserProfile): string => {
-    const report = latestReportByStudent?.[student.id];
-    if (!report) {
-      return latestSessionsByStudent?.[student.id]
-        ? "보고서가 아직 생성되지 않았습니다."
-        : "학습 기록이 없습니다.";
-    }
-    const misconceptions = (report.misconceptions || "").trim();
-    if (!misconceptions || /없음|양호|잘\s*이해|문제\s*없|우수/.test(misconceptions)) {
-      return report.recommendations
-        ? (report.recommendations as string).slice(0, 60)
-        : "학습이 원활하게 진행되고 있습니다.";
-    }
-    return misconceptions.slice(0, 70);
+    return getStudentSignalReasonText(latestReportByStudent?.[student.id], Boolean(latestSessionsByStudent?.[student.id]));
   };
 
   return (

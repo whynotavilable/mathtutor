@@ -14,6 +14,7 @@ import { UserProfile, ai, GEMINI_TEXT_MODEL } from "../../lib/ai";
 import { DEFAULT_TEACHER_INSTRUCTIONS, parseInstructionState, stringifyInstructionState, buildTeacherPrompt } from "../../lib/instructions";
 import { LearningReport, ArchivedSessionDocument, normalizeReportText, exportLearningReportPdf, loadStudentArchiveBundle, hasSessionActivitySinceReport } from "../../lib/archive";
 import { getClassKey, getClassLabel, isTeacherVisibleStudent } from "../../lib/userUtils";
+import { getStudentSignal as getStudentSignalStatus, getStudentSignalReason as getStudentSignalReasonText } from "../../lib/studentSignals";
 import { Type } from "@google/genai";
 
 const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: UserProfile | null; selectedClassKey?: string }) => {
@@ -159,22 +160,11 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
   });
 
   const getStudentSignal = (student: UserProfile): "green" | "yellow" | "red" => {
-    const report = latestReportByStudent[student.id];
-    if (!report) return latestSessionByStudent[student.id] ? "yellow" : "red";
-    const text = `${report.misconceptions || ""} ${report.recommendations || ""}`;
-    if (/교사.*개입|즉각.*지도|직접.*지도|기초.*부터|개념.*자체|전혀.*이해|심각|반드시.*확인/.test(text)) return "red";
-    const misconceptions = (report.misconceptions || "").trim();
-    if (!misconceptions || /없음|양호|잘\s*이해|문제\s*없|우수/.test(misconceptions)) return "green";
-    return "yellow";
+    return getStudentSignalStatus(latestReportByStudent[student.id], Boolean(latestSessionByStudent[student.id]));
   };
 
   const getStudentSignalReason = (student: UserProfile): string => {
-    const report = latestReportByStudent[student.id];
-    if (!report) return latestSessionByStudent[student.id] ? "보고서가 아직 생성되지 않았습니다." : "학습 기록이 없습니다.";
-    const misconceptions = (report.misconceptions || "").trim();
-    if (!misconceptions || /없음|양호|잘\s*이해|문제\s*없|우수/.test(misconceptions))
-      return (report.recommendations as string || "학습이 원활하게 진행되고 있습니다.").slice(0, 60);
-    return misconceptions.slice(0, 70);
+    return getStudentSignalReasonText(latestReportByStudent[student.id], Boolean(latestSessionByStudent[student.id]));
   };
 
   const signalColorClass = { green: "bg-green-400", yellow: "bg-yellow-400", red: "bg-red-500" };

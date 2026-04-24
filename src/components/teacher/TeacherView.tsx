@@ -113,8 +113,8 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any; profile
           "md:translate-x-0",
         )}
       >
-        <div className="px-6 mb-10 flex justify-between items-center">
-          {!isSidebarCollapsed && <h1 className="text-xl font-black tracking-tighter text-gray-100 uppercase">??? AI ???</h1>}
+        <div className={cn("mb-10 flex items-center", isSidebarCollapsed ? "justify-center px-3" : "justify-between px-6")}>
+          {!isSidebarCollapsed && <h1 className="text-xl font-black tracking-tighter text-gray-100 uppercase">{"수학 AI 튜터"}</h1>}
           <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-white/60 hover:text-white">
             <X size={20} />
           </button>
@@ -144,7 +144,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any; profile
           </div>
           <button
             onClick={handleLogout}
-            title={isSidebarCollapsed ? "??????" : undefined}
+            title={isSidebarCollapsed ? "로그아웃" : undefined}
             className={cn(
               "w-full flex items-center text-xs text-white/50 hover:text-white transition-colors",
               isSidebarCollapsed ? "justify-center" : "gap-2"
