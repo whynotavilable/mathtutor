@@ -38,6 +38,8 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
   const [archiveSessions, setArchiveSessions] = useState<ArchivedSessionDocument[]>([]);
   const [expandedArchiveSession, setExpandedArchiveSession] = useState<string | null>(null);
   const isReportStale = hasSessionActivitySinceReport(messages, report);
+  const [latestReportByStudent, setLatestReportByStudent] = useState<Record<string, any>>({});
+  const [latestSessionByStudent, setLatestSessionByStudent] = useState<Record<string, any>>({});
 
   const fetchStudents = async () => {
     const { data, error } = await supabase.from("users").select("*").eq("role", "student").eq("status", "approved").order("grade", { ascending: true }).order("class", { ascending: true }).order("number", { ascending: true });
@@ -47,6 +49,7 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
     }
     const nextStudents = (data || []).filter(isTeacherVisibleStudent);
     setStudents(nextStudents);
+    fetchAllStudentReports(nextStudents);
     setSelectedStudent((current) => {
       if (selectedStudentIdFromRoute && nextStudents.some((student) => student.id === selectedStudentIdFromRoute)) {
         return nextStudents.find((student) => student.id === selectedStudentIdFromRoute) || null;
@@ -97,6 +100,25 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
     }
   };
 
+  const fetchAllStudentReports = async (studentList: UserProfile[]) => {
+    if (!studentList.length) return;
+    const ids = studentList.map((s) => s.id);
+    const { data: allSessions } = await supabase.from("chat_sessions").select("id, user_id").in("user_id", ids);
+    if (!allSessions?.length) return;
+    const sessionOwner = Object.fromEntries(allSessions.map((s) => [s.id, s.user_id]));
+    const sessionByStudent: Record<string, any> = {};
+    allSessions.forEach((s) => { if (!sessionByStudent[s.user_id]) sessionByStudent[s.user_id] = s; });
+    setLatestSessionByStudent(sessionByStudent);
+    const sessionIds = allSessions.map((s) => s.id);
+    const { data: allReports } = await supabase.from("reports").select("*").in("session_id", sessionIds).order("created_at", { ascending: false });
+    const reportMap: Record<string, any> = {};
+    (allReports || []).forEach((r) => {
+      const userId = sessionOwner[r.session_id];
+      if (userId && !reportMap[userId]) reportMap[userId] = r;
+    });
+    setLatestReportByStudent(reportMap);
+  };
+
   useEffect(() => { fetchStudents(); }, []);
   useEffect(() => { setClassFilter(selectedClassKey); }, [selectedClassKey]);
   useEffect(() => {
@@ -135,6 +157,28 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
     const classStudent = students.find((student) => getClassKey(student) === key)!;
     return { key, label: getClassLabel(classStudent) };
   });
+
+  const getStudentSignal = (student: UserProfile): "green" | "yellow" | "red" => {
+    const report = latestReportByStudent[student.id];
+    if (!report) return latestSessionByStudent[student.id] ? "yellow" : "red";
+    const text = `${report.misconceptions || ""} ${report.recommendations || ""}`;
+    if (/교사.*개입|즉각.*지도|직접.*지도|기초.*부터|개념.*자체|전혀.*이해|심각|반드시.*확인/.test(text)) return "red";
+    const misconceptions = (report.misconceptions || "").trim();
+    if (!misconceptions || /없음|양호|잘\s*이해|문제\s*없|우수/.test(misconceptions)) return "green";
+    return "yellow";
+  };
+
+  const getStudentSignalReason = (student: UserProfile): string => {
+    const report = latestReportByStudent[student.id];
+    if (!report) return latestSessionByStudent[student.id] ? "보고서가 아직 생성되지 않았습니다." : "학습 기록이 없습니다.";
+    const misconceptions = (report.misconceptions || "").trim();
+    if (!misconceptions || /없음|양호|잘\s*이해|문제\s*없|우수/.test(misconceptions))
+      return (report.recommendations as string || "학습이 원활하게 진행되고 있습니다.").slice(0, 60);
+    return misconceptions.slice(0, 70);
+  };
+
+  const signalColorClass = { green: "bg-green-400", yellow: "bg-yellow-400", red: "bg-red-500" };
+  const signalLabel = { green: "정상 학습 중", yellow: "학습 주의 필요", red: "교사 개입 필요" };
 
   const openInstructionModal = () => {
     if (!selectedStudent) return;
@@ -270,12 +314,26 @@ ${chatContext}
           </select>
         </div>
         <div className="divide-y divide-highlight overflow-y-auto">
-          {filteredStudents.map((student) => (
-            <button key={student.id} onClick={() => setSelectedStudent(student)} className={cn("w-full px-5 py-4 text-left transition-all hover:bg-paper", selectedStudent?.id === student.id && "bg-paper")}>
-              <p className="text-sm font-black text-ink">{student.name}</p>
-              <p className="text-[10px] font-bold text-secondary-text">{getClassLabel(student)} / {student.number || "-"}번 / {student.email}</p>
-            </button>
-          ))}
+          {filteredStudents.map((student) => {
+            const signal = getStudentSignal(student);
+            return (
+              <button key={student.id} onClick={() => setSelectedStudent(student)} className={cn("group relative w-full px-5 py-4 text-left transition-all hover:bg-paper", selectedStudent?.id === student.id && "bg-paper")}>
+                <div className="flex items-center gap-2.5">
+                  <div className="relative flex-shrink-0">
+                    <span className={`inline-block w-2 h-2 rounded-full ${signalColorClass[signal]}`} />
+                    <div className="absolute bottom-full left-0 mb-2 w-52 rounded-xl bg-gray-900 px-3 py-2.5 text-[10px] font-semibold leading-relaxed text-white shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-normal">
+                      <p className="font-black mb-1 text-[9px] uppercase tracking-widest opacity-60">{signalLabel[signal]}</p>
+                      <p>{getStudentSignalReason(student)}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-ink">{student.name}</p>
+                    <p className="text-[10px] font-bold text-secondary-text">{getClassLabel(student)} / {student.number || "-"}번</p>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
       <div className="min-h-[500px] overflow-hidden rounded-2xl border border-highlight bg-white shadow-sm">

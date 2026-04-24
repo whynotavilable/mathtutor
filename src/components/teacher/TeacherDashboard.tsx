@@ -246,6 +246,22 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
     return "yellow";
   };
 
+  const getStudentSignalReason = (student: UserProfile): string => {
+    const report = latestReportByStudent?.[student.id];
+    if (!report) {
+      return latestSessionsByStudent?.[student.id]
+        ? "보고서가 아직 생성되지 않았습니다."
+        : "학습 기록이 없습니다.";
+    }
+    const misconceptions = (report.misconceptions || "").trim();
+    if (!misconceptions || /없음|양호|잘\s*이해|문제\s*없|우수/.test(misconceptions)) {
+      return report.recommendations
+        ? (report.recommendations as string).slice(0, 60)
+        : "학습이 원활하게 진행되고 있습니다.";
+    }
+    return misconceptions.slice(0, 70);
+  };
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center min-h-[400px]">
       <div className="text-center space-y-4">
@@ -435,7 +451,13 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
               return (
               <Link to={`/teacher/analysis/${s.id}`} key={s.id} className="flex items-center justify-between p-4 px-6 hover:bg-paper transition-colors group">
                 <div className="flex items-center gap-3">
-                  <span title={signalTitle} className={`inline-block w-2.5 h-2.5 rounded-full flex-shrink-0 ${signalColor}`} />
+                  <div className="relative flex-shrink-0">
+                    <span className={`inline-block w-2.5 h-2.5 rounded-full ${signalColor}`} />
+                    <div className="absolute bottom-full left-0 mb-2 w-56 rounded-xl bg-gray-900 px-3 py-2.5 text-[10px] font-semibold leading-relaxed text-white shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-normal">
+                      <p className="font-black mb-1 text-[9px] uppercase tracking-widest opacity-60">{signalTitle}</p>
+                      <p>{getStudentSignalReason(s)}</p>
+                    </div>
+                  </div>
                   <div className="w-8 h-8 rounded-full bg-highlight border border-gray-200 flex items-center justify-center text-xs font-bold text-accent">
                     {s.name[0]}
                   </div>
