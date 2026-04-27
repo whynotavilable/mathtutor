@@ -3,6 +3,7 @@ import { supabase } from "../supabase";
 export interface TeacherResourceItem {
   id: string;
   name: string;
+  fileName?: string;
   type: string;
   size: number;
   uploadedAt: string;
@@ -35,7 +36,30 @@ export interface TeacherResourceMetadata {
   uploadedBy?: string;
 }
 
+export interface WeeklyResourcePlan {
+  id: string;
+  classKey: string;
+  resourceObjectPath: string;
+  resourceTitle: string;
+  weekStartDate: string;
+  weekEndDate: string;
+  lessonStart: string;
+  lessonEnd: string;
+  pageStart: string;
+  pageEnd: string;
+  note: string;
+  active: boolean;
+  updatedAt: string;
+}
+
+export interface ResourcePageText {
+  pageNumber: number;
+  text: string;
+}
+
 export const RESOURCE_METADATA_SUFFIX = "__meta.json";
+export const RESOURCE_PAGES_SUFFIX = "__pages.json";
+export const WEEKLY_PLAN_PREFIX = "weekly-plans";
 
 export const SUPABASE_RESOURCE_BUCKET =
   (import.meta as any).env.VITE_SUPABASE_RESOURCE_BUCKET || "teacher-resources";
@@ -46,21 +70,26 @@ const safeExt = (fileName: string) => {
   return ext.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10);
 };
 
+const safePathPart = (value: string) => (value || "all").replace(/[^a-zA-Z0-9-]/g, "-");
+
 export const buildResourceObjectPath = (
   classKey: string,
   category: TeacherResourceItem["category"],
   fileName: string,
 ) => {
   const ext = safeExt(fileName);
-  const safeClass = (classKey || "all").replace(/[^a-zA-Z0-9-]/g, "-");
+  const safeClass = safePathPart(classKey || "all");
   return `${safeClass}__${category}__${Date.now()}${ext ? "." + ext : ""}`;
 };
 
 export const buildResourceMetadataPath = (objectPath: string) => `${objectPath}${RESOURCE_METADATA_SUFFIX}`;
+export const buildResourcePagesPath = (objectPath: string) => `${objectPath}${RESOURCE_PAGES_SUFFIX}`;
 export const isResourceMetadataPath = (path: string) => path.endsWith(RESOURCE_METADATA_SUFFIX);
+export const isResourcePagesPath = (path: string) => path.endsWith(RESOURCE_PAGES_SUFFIX);
+export const buildWeeklyPlanPath = (classKey: string) => `${WEEKLY_PLAN_PREFIX}/${safePathPart(classKey)}.json`;
 
 export const parseResourceObjectPath = (path: string) => {
-  if (isResourceMetadataPath(path)) return null;
+  if (isResourceMetadataPath(path) || isResourcePagesPath(path)) return null;
   const parts = path.split("__");
   if (parts.length < 3) return null;
   const [classKey, category, timestampWithExt] = parts;
@@ -99,6 +128,69 @@ export const writeResourceMetadata = async (objectPath: string, metadata: Teache
   if (error) throw error;
 };
 
+export const readResourcePages = async (objectPath: string) => {
+  const { data, error } = await supabase.storage
+    .from(SUPABASE_RESOURCE_BUCKET)
+    .download(buildResourcePagesPath(objectPath));
+
+  if (error || !data) return [] as ResourcePageText[];
+
+  try {
+    const parsed = JSON.parse(await data.text());
+    return Array.isArray(parsed) ? parsed as ResourcePageText[] : [];
+  } catch {
+    return [] as ResourcePageText[];
+  }
+};
+
+export const writeResourcePages = async (objectPath: string, pages: ResourcePageText[]) => {
+  const blob = new Blob([JSON.stringify(pages, null, 2)], { type: "application/json;charset=utf-8" });
+  const { error } = await supabase.storage
+    .from(SUPABASE_RESOURCE_BUCKET)
+    .upload(buildResourcePagesPath(objectPath), blob, {
+      contentType: "application/json;charset=utf-8",
+      upsert: true,
+    });
+
+  if (error) throw error;
+};
+
+export const loadWeeklyResourcePlans = async (classKey: string) => {
+  const { data, error } = await supabase.storage
+    .from(SUPABASE_RESOURCE_BUCKET)
+    .download(buildWeeklyPlanPath(classKey || "all"));
+
+  if (error || !data) return [] as WeeklyResourcePlan[];
+
+  try {
+    const parsed = JSON.parse(await data.text());
+    return Array.isArray(parsed) ? parsed as WeeklyResourcePlan[] : [];
+  } catch {
+    return [] as WeeklyResourcePlan[];
+  }
+};
+
+export const writeWeeklyResourcePlans = async (classKey: string, plans: WeeklyResourcePlan[]) => {
+  const blob = new Blob([JSON.stringify(plans, null, 2)], { type: "application/json;charset=utf-8" });
+  const { error } = await supabase.storage
+    .from(SUPABASE_RESOURCE_BUCKET)
+    .upload(buildWeeklyPlanPath(classKey || "all"), blob, {
+      contentType: "application/json;charset=utf-8",
+      upsert: true,
+    });
+
+  if (error) throw error;
+};
+
+export const getActiveWeeklyResourcePlan = async (classKey: string, date = new Date()) => {
+  const plans = await loadWeeklyResourcePlans(classKey);
+  const today = date.toISOString().slice(0, 10);
+  return plans
+    .filter((plan) => plan.active)
+    .filter((plan) => (!plan.weekStartDate || plan.weekStartDate <= today) && (!plan.weekEndDate || today <= plan.weekEndDate))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] || null;
+};
+
 export const loadTeacherResourceCards = async () => {
   const { data, error } = await supabase.storage.from(SUPABASE_RESOURCE_BUCKET).list("", {
     limit: 200,
@@ -111,6 +203,7 @@ export const loadTeacherResourceCards = async () => {
     (data || [])
       .filter((item) => item.name && !item.id?.startsWith?.("folder"))
       .filter((item) => !isResourceMetadataPath(item.name))
+      .filter((item) => !isResourcePagesPath(item.name))
       .map(async (item) => {
         const parsed = parseResourceObjectPath(item.name);
         if (!parsed) return null;
@@ -118,6 +211,7 @@ export const loadTeacherResourceCards = async () => {
         return {
           id: item.id || item.name,
           name: metadata?.title || parsed.fileName,
+          fileName: metadata?.fileName || parsed.fileName,
           type: item.metadata?.mimetype || "application/octet-stream",
           size: Number(item.metadata?.size || 0),
           uploadedAt: metadata?.uploadedAt || item.created_at || new Date(Number(parsed.uploadedAt || Date.now())).toISOString(),

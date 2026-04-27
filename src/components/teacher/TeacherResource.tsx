@@ -1,44 +1,96 @@
-﻿import { useState, useEffect, useRef, useCallback } from "react";
-import { Plus, Database, RefreshCcw, UploadCloud } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { CalendarDays, Database, Edit3, RefreshCcw, Save, UploadCloud, X } from "lucide-react";
 import { supabase } from "../../supabase";
 import {
   TeacherResourceItem,
   TeacherResourceMetadata,
+  WeeklyResourcePlan,
   SUPABASE_RESOURCE_BUCKET,
   buildResourceObjectPath,
   buildResourceMetadataPath,
+  buildResourcePagesPath,
   loadTeacherResourceCards,
+  loadWeeklyResourcePlans,
   writeResourceMetadata,
+  writeResourcePages,
+  writeWeeklyResourcePlans,
 } from "../../lib/resources";
+import { extractPdfPages } from "../../lib/pdfExtract";
+
+type ResourceDraft = Pick<
+  TeacherResourceMetadata,
+  "title" | "subject" | "gradeLabel" | "unit" | "description" | "keyConcepts" | "importantExamples" | "commonMisconceptions"
+>;
+
+const emptyResourceDraft: ResourceDraft = {
+  title: "",
+  subject: "",
+  gradeLabel: "",
+  unit: "",
+  description: "",
+  keyConcepts: "",
+  importantExamples: "",
+  commonMisconceptions: "",
+};
+
+const defaultWeekRange = () => {
+  const today = new Date();
+  const day = today.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const start = new Date(today);
+  start.setDate(today.getDate() + mondayOffset);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return {
+    start: start.toISOString().slice(0, 10),
+    end: end.toISOString().slice(0, 10),
+  };
+};
+
+const isPdfFile = (file: File) => file.type.includes("pdf") || file.name.toLowerCase().endsWith(".pdf");
 
 const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => {
   const [resources, setResources] = useState<TeacherResourceItem[]>([]);
+  const [weeklyPlans, setWeeklyPlans] = useState<WeeklyResourcePlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [savingPlan, setSavingPlan] = useState(false);
+  const [processingObjectPath, setProcessingObjectPath] = useState<string | null>(null);
   const [storageError, setStorageError] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [editingObjectPath, setEditingObjectPath] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [resourceDraft, setResourceDraft] = useState({
-    title: "",
-    subject: "",
-    gradeLabel: "",
-    unit: "",
-    description: "",
-    keyConcepts: "",
-    importantExamples: "",
-    commonMisconceptions: "",
+  const [resourceDraft, setResourceDraft] = useState<ResourceDraft>(emptyResourceDraft);
+  const weekRange = defaultWeekRange();
+  const [planDraft, setPlanDraft] = useState({
+    resourceObjectPath: "",
+    weekStartDate: weekRange.start,
+    weekEndDate: weekRange.end,
+    lessonStart: "",
+    lessonEnd: "",
+    pageStart: "",
+    pageEnd: "",
+    note: "",
   });
 
+  const currentClassKey = selectedClassKey || "all";
   const filteredResources = resources.filter((item) => !selectedClassKey || !item.classKey || item.classKey === selectedClassKey);
+  const classPlans = weeklyPlans.filter((plan) => plan.classKey === currentClassKey);
 
   const fetchResources = async () => {
     setLoading(true);
     setStorageError("");
     try {
-      const cards = await loadTeacherResourceCards();
+      const [cards, plans] = await Promise.all([
+        loadTeacherResourceCards(),
+        loadWeeklyResourcePlans(currentClassKey),
+      ]);
       setResources(cards);
+      setWeeklyPlans(plans);
     } catch (error: any) {
       setResources([]);
+      setWeeklyPlans([]);
       setStorageError(
         `${error?.message || "교과자료 저장소를 불러오지 못했습니다."} Supabase Storage 버킷 '${SUPABASE_RESOURCE_BUCKET}'와 권한 설정을 확인해 주세요.`
       );
@@ -49,31 +101,50 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
 
   useEffect(() => {
     fetchResources();
-  }, []);
+  }, [currentClassKey]);
 
   const resetDraft = () => {
-    setResourceDraft({
-      title: "",
-      subject: "",
-      gradeLabel: "",
-      unit: "",
-      description: "",
-      keyConcepts: "",
-      importantExamples: "",
-      commonMisconceptions: "",
-    });
+    setResourceDraft(emptyResourceDraft);
+    setPendingFiles([]);
+    setEditingObjectPath(null);
+    if (inputRef.current) inputRef.current.value = "";
   };
 
-  const handleFiles = async (files: FileList | null) => {
+  const selectFiles = (files: FileList | null) => {
     if (!files?.length) return;
+    setPendingFiles(Array.from(files));
+  };
+
+  const buildMetadata = (file: File, category: TeacherResourceItem["category"]): TeacherResourceMetadata => ({
+    title: resourceDraft.title.trim() || file.name.replace(/\.[^.]+$/, ""),
+    subject: resourceDraft.subject.trim(),
+    gradeLabel: resourceDraft.gradeLabel.trim(),
+    unit: resourceDraft.unit.trim(),
+    description: resourceDraft.description.trim(),
+    keyConcepts: resourceDraft.keyConcepts.trim(),
+    importantExamples: resourceDraft.importantExamples.trim(),
+    commonMisconceptions: resourceDraft.commonMisconceptions.trim(),
+    classKey: currentClassKey,
+    category,
+    fileName: file.name,
+    uploadedAt: new Date().toISOString(),
+    uploadedBy: "teacher",
+  });
+
+  const saveNewResources = async () => {
+    if (!pendingFiles.length) {
+      alert("먼저 업로드할 파일을 선택해 주세요.");
+      return;
+    }
+
     try {
       setUploading(true);
       setStorageError("");
       const uploadResults = await Promise.all(
-        Array.from(files).map(async (file) => {
+        pendingFiles.map(async (file) => {
           const category: TeacherResourceItem["category"] =
-            file.type.includes("pdf") ? "resource" : file.type.startsWith("image/") ? "example" : "curriculum";
-          const objectPath = buildResourceObjectPath(selectedClassKey || "all", category, file.name);
+            isPdfFile(file) ? "resource" : file.type.startsWith("image/") ? "example" : "curriculum";
+          const objectPath = buildResourceObjectPath(currentClassKey, category, file.name);
           const { error } = await supabase.storage
             .from(SUPABASE_RESOURCE_BUCKET)
             .upload(objectPath, file, {
@@ -82,36 +153,72 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
             });
 
           if (error) throw error;
-
-          const metadata: TeacherResourceMetadata = {
-            title: resourceDraft.title.trim() || file.name.replace(/\.[^.]+$/, ""),
-            subject: resourceDraft.subject.trim(),
-            gradeLabel: resourceDraft.gradeLabel.trim(),
-            unit: resourceDraft.unit.trim(),
-            description: resourceDraft.description.trim(),
-            keyConcepts: resourceDraft.keyConcepts.trim(),
-            importantExamples: resourceDraft.importantExamples.trim(),
-            commonMisconceptions: resourceDraft.commonMisconceptions.trim(),
-            classKey: selectedClassKey || "all",
-            category,
-            fileName: file.name,
-            uploadedAt: new Date().toISOString(),
-            uploadedBy: "teacher",
-          };
-          await writeResourceMetadata(objectPath, metadata);
+          await writeResourceMetadata(objectPath, buildMetadata(file, category));
+          if (isPdfFile(file)) {
+            const pages = await extractPdfPages(file);
+            await writeResourcePages(objectPath, pages);
+          }
           return objectPath;
         })
       );
       await fetchResources();
       resetDraft();
-      alert(`${uploadResults.length}개 파일을 업로드했습니다.`);
+      alert(`${uploadResults.length}개 자료를 저장했습니다.`);
     } catch (error: any) {
-      const message = error?.message || "파일 업로드에 실패했습니다.";
+      const message = error?.message || "자료 저장에 실패했습니다.";
       setStorageError(`${message} 저장소 버킷 '${SUPABASE_RESOURCE_BUCKET}'와 업로드 권한을 확인해 주세요.`);
       alert(message);
     } finally {
       setUploading(false);
-      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  const startEditResource = (item: TeacherResourceItem) => {
+    setEditingObjectPath(item.objectPath || null);
+    setPendingFiles([]);
+    setResourceDraft({
+      title: item.name || "",
+      subject: item.subject || "",
+      gradeLabel: item.gradeLabel || "",
+      unit: item.unit || "",
+      description: item.description || "",
+      keyConcepts: item.keyConcepts || "",
+      importantExamples: item.importantExamples || "",
+      commonMisconceptions: item.commonMisconceptions || "",
+    });
+  };
+
+  const saveResourceEdit = async () => {
+    const target = resources.find((item) => item.objectPath === editingObjectPath);
+    if (!target?.objectPath) return;
+
+    try {
+      setUploading(true);
+      setStorageError("");
+      await writeResourceMetadata(target.objectPath, {
+        title: resourceDraft.title.trim() || target.name,
+        subject: resourceDraft.subject.trim(),
+        gradeLabel: resourceDraft.gradeLabel.trim(),
+        unit: resourceDraft.unit.trim(),
+        description: resourceDraft.description.trim(),
+        keyConcepts: resourceDraft.keyConcepts.trim(),
+        importantExamples: resourceDraft.importantExamples.trim(),
+        commonMisconceptions: resourceDraft.commonMisconceptions.trim(),
+        classKey: target.classKey || currentClassKey,
+        category: target.category,
+        fileName: target.fileName || target.name,
+        uploadedAt: target.uploadedAt,
+        uploadedBy: target.uploadedBy || "teacher",
+      });
+      await fetchResources();
+      resetDraft();
+      alert("자료 정보를 저장했습니다.");
+    } catch (error: any) {
+      const message = error?.message || "자료 정보 저장에 실패했습니다.";
+      setStorageError(message);
+      alert(message);
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -128,14 +235,15 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    handleFiles(e.dataTransfer.files);
-  }, [resourceDraft, selectedClassKey]);
+    selectFiles(e.dataTransfer.files);
+  }, []);
 
   const removeResource = async (item: TeacherResourceItem) => {
     if (!item.objectPath) return;
     const { error } = await supabase.storage.from(SUPABASE_RESOURCE_BUCKET).remove([
       item.objectPath,
       buildResourceMetadataPath(item.objectPath),
+      buildResourcePagesPath(item.objectPath),
     ]);
     if (error) {
       setStorageError(error.message);
@@ -156,7 +264,7 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
 
     const link = document.createElement("a");
     link.href = data.signedUrl;
-    link.download = item.name;
+    link.download = item.fileName || item.name;
     link.target = "_blank";
     link.rel = "noreferrer";
     document.body.appendChild(link);
@@ -164,75 +272,213 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
     link.remove();
   };
 
+  const reprocessResourcePages = async (item: TeacherResourceItem) => {
+    if (!item.objectPath) return;
+
+    try {
+      setProcessingObjectPath(item.objectPath);
+      setStorageError("");
+      const { data, error } = await supabase.storage.from(SUPABASE_RESOURCE_BUCKET).download(item.objectPath);
+      if (error || !data) throw error || new Error("PDF 파일을 불러오지 못했습니다.");
+
+      const pages = await extractPdfPages(data);
+      await writeResourcePages(item.objectPath, pages);
+      alert(`${pages.length}쪽의 PDF 텍스트를 다시 처리했습니다.`);
+    } catch (error: any) {
+      const message = error?.message || "PDF 텍스트 처리에 실패했습니다.";
+      setStorageError(message);
+      alert(message);
+    } finally {
+      setProcessingObjectPath(null);
+    }
+  };
+
+  const saveWeeklyPlan = async () => {
+    const selectedResource = resources.find((item) => item.objectPath === planDraft.resourceObjectPath);
+    if (!selectedResource?.objectPath) {
+      alert("이번 주에 사용할 자료를 선택해 주세요.");
+      return;
+    }
+    if (!planDraft.pageStart.trim() || !planDraft.pageEnd.trim()) {
+      alert("페이지 범위를 입력해 주세요.");
+      return;
+    }
+
+    try {
+      setSavingPlan(true);
+      setStorageError("");
+      const nextPlan: WeeklyResourcePlan = {
+        id: crypto.randomUUID(),
+        classKey: currentClassKey,
+        resourceObjectPath: selectedResource.objectPath,
+        resourceTitle: selectedResource.name,
+        weekStartDate: planDraft.weekStartDate,
+        weekEndDate: planDraft.weekEndDate,
+        lessonStart: planDraft.lessonStart.trim(),
+        lessonEnd: planDraft.lessonEnd.trim(),
+        pageStart: planDraft.pageStart.trim(),
+        pageEnd: planDraft.pageEnd.trim(),
+        note: planDraft.note.trim(),
+        active: true,
+        updatedAt: new Date().toISOString(),
+      };
+      const inactivePlans = weeklyPlans.map((plan) => ({ ...plan, active: false }));
+      const nextPlans = [nextPlan, ...inactivePlans].filter((plan) => plan.classKey === currentClassKey);
+      await writeWeeklyResourcePlans(currentClassKey, nextPlans);
+      setWeeklyPlans(nextPlans);
+      alert("이번 주 자료 계획을 저장했습니다.");
+    } catch (error: any) {
+      const message = error?.message || "주간 계획 저장에 실패했습니다.";
+      setStorageError(message);
+      alert(message);
+    } finally {
+      setSavingPlan(false);
+    }
+  };
+
+  const activateWeeklyPlan = async (planId: string) => {
+    const nextPlans = weeklyPlans.map((plan) => ({ ...plan, active: plan.id === planId }));
+    await writeWeeklyResourcePlans(currentClassKey, nextPlans);
+    setWeeklyPlans(nextPlans);
+  };
+
+  const removeWeeklyPlan = async (planId: string) => {
+    const nextPlans = weeklyPlans.filter((plan) => plan.id !== planId);
+    await writeWeeklyResourcePlans(currentClassKey, nextPlans);
+    setWeeklyPlans(nextPlans);
+  };
+
   return (
     <div className="space-y-8">
-      <div className="flex items-end justify-between">
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h2 className="text-2xl font-black text-ink uppercase tracking-tighter">교과자료 보관함</h2>
           <p className="text-xs font-bold text-secondary-text uppercase tracking-widest">
             {selectedClassKey ? `${selectedClassKey.replace("-", "학년 ")}반 자료` : "전체 학급 자료"}
           </p>
         </div>
-        <input ref={inputRef} type="file" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
+        <input ref={inputRef} type="file" multiple className="hidden" onChange={(e) => selectFiles(e.target.files)} />
       </div>
 
-      <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+      <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <div className="rounded-xl border border-highlight bg-white p-6 shadow-sm space-y-4">
-          <div>
-            <h3 className="text-lg font-black text-ink">자료 업로드 메타데이터</h3>
-            <p className="mt-2 text-xs font-semibold text-secondary-text">교사가 직접 적은 핵심 개념과 오개념이 교사 채팅의 1차 근거로 사용됩니다.</p>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-black text-ink">{editingObjectPath ? "자료 정보 수정" : "자료 저장"}</h3>
+              <p className="mt-2 text-xs font-semibold text-secondary-text">
+                파일을 먼저 대기 목록에 올린 뒤, 입력한 정보와 함께 저장합니다.
+              </p>
+            </div>
+            {editingObjectPath && (
+              <button onClick={resetDraft} className="rounded-xl border border-highlight p-2 text-secondary-text hover:text-accent">
+                <X size={16} />
+              </button>
+            )}
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <input value={resourceDraft.title} onChange={(e) => setResourceDraft((prev) => ({ ...prev, title: e.target.value }))} placeholder="자료 제목" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
             <input value={resourceDraft.subject} onChange={(e) => setResourceDraft((prev) => ({ ...prev, subject: e.target.value }))} placeholder="과목" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
-            <input value={resourceDraft.gradeLabel} onChange={(e) => setResourceDraft((prev) => ({ ...prev, gradeLabel: e.target.value }))} placeholder="학년 (예: 3학년)" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
+            <input value={resourceDraft.gradeLabel} onChange={(e) => setResourceDraft((prev) => ({ ...prev, gradeLabel: e.target.value }))} placeholder="학년 (예: 1학년)" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
             <input value={resourceDraft.unit} onChange={(e) => setResourceDraft((prev) => ({ ...prev, unit: e.target.value }))} placeholder="단원" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
           </div>
           <textarea value={resourceDraft.description} onChange={(e) => setResourceDraft((prev) => ({ ...prev, description: e.target.value }))} placeholder="자료 설명" className="h-24 w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none resize-none" />
           <textarea value={resourceDraft.keyConcepts} onChange={(e) => setResourceDraft((prev) => ({ ...prev, keyConcepts: e.target.value }))} placeholder="핵심 개념" className="h-24 w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none resize-none" />
           <textarea value={resourceDraft.importantExamples} onChange={(e) => setResourceDraft((prev) => ({ ...prev, importantExamples: e.target.value }))} placeholder="중요 문제/예시" className="h-24 w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none resize-none" />
           <textarea value={resourceDraft.commonMisconceptions} onChange={(e) => setResourceDraft((prev) => ({ ...prev, commonMisconceptions: e.target.value }))} placeholder="자주 나오는 오개념" className="h-24 w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none resize-none" />
-          <div
-            onDragOver={onDragOver}
-            onDragLeave={onDragLeave}
-            onDrop={onDrop}
-            onClick={() => !uploading && inputRef.current?.click()}
-            className={`flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-8 transition-all
-              ${isDragOver
-                ? "border-accent bg-accent/5 scale-[1.01]"
-                : "border-highlight bg-paper hover:border-accent hover:bg-white"
-              }
-              ${uploading ? "cursor-not-allowed opacity-60" : ""}
-            `}
-          >
-            <UploadCloud size={28} className={isDragOver ? "text-accent" : "text-secondary-text"} />
-            <div className="text-center">
-              <p className="text-sm font-black text-ink">
-                {uploading ? "업로드 중..." : isDragOver ? "여기에 놓으세요" : "파일을 여기에 끌어다 놓거나"}
-              </p>
-              {!uploading && !isDragOver && (
+
+          {!editingObjectPath && (
+            <div
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
+              onDrop={onDrop}
+              onClick={() => !uploading && inputRef.current?.click()}
+              className={`flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-8 transition-all
+                ${isDragOver ? "border-accent bg-accent/5 scale-[1.01]" : "border-highlight bg-paper hover:border-accent hover:bg-white"}
+                ${uploading ? "cursor-not-allowed opacity-60" : ""}
+              `}
+            >
+              <UploadCloud size={28} className={isDragOver ? "text-accent" : "text-secondary-text"} />
+              <div className="text-center">
+                <p className="text-sm font-black text-ink">
+                  {isDragOver ? "여기에 놓으세요" : pendingFiles.length ? `${pendingFiles.length}개 파일이 저장 대기 중입니다.` : "파일을 여기에 끌어다 놓거나"}
+                </p>
                 <p className="mt-1 text-xs font-bold text-accent underline underline-offset-2">클릭해서 선택</p>
-              )}
-              {!uploading && (
-                <p className="mt-2 text-[11px] font-semibold text-secondary-text">PDF, 이미지 등 모든 파일 형식 지원</p>
-              )}
+                <p className="mt-2 text-[11px] font-semibold text-secondary-text">드롭만으로는 업로드되지 않습니다. 아래 저장 버튼을 눌러야 반영됩니다.</p>
+              </div>
             </div>
+          )}
+
+          {pendingFiles.length > 0 && (
+            <div className="rounded-xl border border-highlight bg-paper p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-secondary-text">저장 대기 파일</p>
+              <div className="mt-3 space-y-2">
+                {pendingFiles.map((file) => (
+                  <div key={`${file.name}-${file.size}`} className="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-xs font-bold text-ink">
+                    <span>{file.name}</span>
+                    <span className="text-secondary-text">{(file.size / 1024).toFixed(1)} KB</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button
+              onClick={editingObjectPath ? saveResourceEdit : saveNewResources}
+              disabled={uploading || (!editingObjectPath && pendingFiles.length === 0)}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-accent px-5 py-3 text-xs font-black uppercase tracking-widest text-white shadow-md transition-all hover:bg-sidebar disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Save size={16} />
+              {uploading ? "저장 중..." : editingObjectPath ? "자료 정보 저장" : "파일과 정보 저장"}
+            </button>
+            <button onClick={resetDraft} className="rounded-xl border border-highlight px-5 py-3 text-xs font-black uppercase tracking-widest text-secondary-text">
+              초기화
+            </button>
           </div>
         </div>
 
-        <div className="bg-sidebar text-white p-8 rounded-xl relative overflow-hidden flex flex-col justify-between shadow-lg">
-          <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/5 rounded-full blur-3xl"></div>
-          <Database size={32} className="mb-6 opacity-40" />
-          <div>
-            <h3 className="text-lg font-black mb-3 uppercase tracking-tighter">자료 활용 가이드</h3>
-            <p className="text-white/70 text-xs mb-6 leading-relaxed font-medium">
-              업로드한 PDF 원문과 함께 핵심 개념, 중요 예시, 오개념 메모가 저장됩니다. 교사 채팅은 이 메타데이터를 먼저 읽고 수업 개입안을 제안합니다.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {['핵심 개념', '중요 문제/예시', '오개념 메모'].map((tag) => (
-                <span key={tag} className="bg-white/10 text-[9px] font-black px-3 py-1.5 rounded border border-white/20 uppercase tracking-widest">{tag}</span>
-              ))}
+        <div className="space-y-6">
+          <div className="rounded-xl border border-highlight bg-white p-6 shadow-sm">
+            <div className="flex items-center gap-3">
+              <CalendarDays size={22} className="text-accent" />
+              <div>
+                <h3 className="text-lg font-black text-ink">이번 주 사용 계획</h3>
+                <p className="text-xs font-semibold text-secondary-text">요일 구분 없이 차시와 페이지 범위를 지정합니다.</p>
+              </div>
             </div>
+            <div className="mt-5 space-y-3">
+              <select value={planDraft.resourceObjectPath} onChange={(e) => setPlanDraft((prev) => ({ ...prev, resourceObjectPath: e.target.value }))} className="w-full rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none">
+                <option value="">이번 주에 사용할 자료 선택</option>
+                {filteredResources.map((item) => (
+                  <option key={item.objectPath} value={item.objectPath}>{item.name}</option>
+                ))}
+              </select>
+              <div className="grid grid-cols-2 gap-3">
+                <input type="date" value={planDraft.weekStartDate} onChange={(e) => setPlanDraft((prev) => ({ ...prev, weekStartDate: e.target.value }))} className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
+                <input type="date" value={planDraft.weekEndDate} onChange={(e) => setPlanDraft((prev) => ({ ...prev, weekEndDate: e.target.value }))} className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input value={planDraft.lessonStart} onChange={(e) => setPlanDraft((prev) => ({ ...prev, lessonStart: e.target.value }))} placeholder="시작 차시 예: 3" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
+                <input value={planDraft.lessonEnd} onChange={(e) => setPlanDraft((prev) => ({ ...prev, lessonEnd: e.target.value }))} placeholder="끝 차시 예: 7" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input value={planDraft.pageStart} onChange={(e) => setPlanDraft((prev) => ({ ...prev, pageStart: e.target.value }))} placeholder="시작 쪽 예: 5" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
+                <input value={planDraft.pageEnd} onChange={(e) => setPlanDraft((prev) => ({ ...prev, pageEnd: e.target.value }))} placeholder="끝 쪽 예: 20" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
+              </div>
+              <textarea value={planDraft.note} onChange={(e) => setPlanDraft((prev) => ({ ...prev, note: e.target.value }))} placeholder="이번 주 운영 지침" className="h-24 w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none resize-none" />
+              <button onClick={saveWeeklyPlan} disabled={savingPlan} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sidebar px-5 py-3 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50">
+                <Save size={16} />
+                {savingPlan ? "저장 중..." : "주간 계획 저장"}
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-sidebar text-white p-8 rounded-xl relative overflow-hidden shadow-lg">
+            <Database size={32} className="mb-6 opacity-40" />
+            <h3 className="text-lg font-black mb-3 uppercase tracking-tighter">자료 활용 가이드</h3>
+            <p className="text-white/70 text-xs leading-relaxed font-medium">
+              자료는 저장 버튼을 누를 때만 업로드됩니다. 주간 계획은 학생 채팅 프롬프트에 반영되어 해당 자료와 페이지 범위를 우선 사용하게 합니다.
+            </p>
           </div>
         </div>
       </div>
@@ -251,6 +497,31 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
       {storageError && <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-600">{storageError}</div>}
 
       <div className="grid gap-4">
+        <h3 className="text-lg font-black text-ink">활성 주간 계획</h3>
+        {classPlans.map((plan) => (
+          <div key={plan.id} className="rounded-xl border border-highlight bg-white p-5">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-sm font-black text-ink">{plan.resourceTitle}</p>
+                <p className="mt-1 text-xs font-bold text-secondary-text">
+                  {plan.weekStartDate} ~ {plan.weekEndDate} / {plan.lessonStart || "?"}~{plan.lessonEnd || "?"}차시 / {plan.pageStart}~{plan.pageEnd}쪽
+                </p>
+                {plan.note && <p className="mt-3 rounded-xl bg-paper px-4 py-3 text-sm font-semibold text-ink">{plan.note}</p>}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => activateWeeklyPlan(plan.id)} className={`px-4 py-2 rounded-xl border text-xs font-black ${plan.active ? "border-accent bg-accent text-white" : "border-highlight text-accent"}`}>
+                  {plan.active ? "활성" : "활성화"}
+                </button>
+                <button onClick={() => removeWeeklyPlan(plan.id)} className="px-4 py-2 rounded-xl border border-highlight text-xs font-black text-red-500">삭제</button>
+              </div>
+            </div>
+          </div>
+        ))}
+        {classPlans.length === 0 && <div className="bg-white rounded-xl border border-highlight p-8 text-center text-sm font-bold text-gray-400">저장된 주간 계획이 없습니다.</div>}
+      </div>
+
+      <div className="grid gap-4">
+        <h3 className="text-lg font-black text-ink">저장된 자료</h3>
         {loading && <div className="bg-white rounded-xl border border-highlight p-10 text-center text-sm font-bold text-gray-400">저장소 자료를 불러오는 중입니다.</div>}
         {filteredResources.map((item) => (
           <div key={item.id} className="bg-white rounded-xl border border-highlight p-5 flex flex-col gap-4">
@@ -258,10 +529,20 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
               <div>
                 <p className="text-sm font-black text-ink">{item.name}</p>
                 <p className="text-[10px] font-bold text-secondary-text">
-                  {new Date(item.uploadedAt).toLocaleString()} / {(item.size / 1024).toFixed(1)} KB / {item.classKey || '전체'} / {item.category === 'curriculum' ? '교육과정' : item.category === 'example' ? '예시 문항' : '교과자료'}
+                  {new Date(item.uploadedAt).toLocaleString()} / {(item.size / 1024).toFixed(1)} KB / {item.classKey || "전체"} / {item.category === "curriculum" ? "교육과정" : item.category === "example" ? "예시 문항" : "교과자료"}
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => startEditResource(item)} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-highlight text-xs font-black text-accent"><Edit3 size={14} />정보 수정</button>
+                {item.category === "resource" && (
+                  <button
+                    onClick={() => reprocessResourcePages(item)}
+                    disabled={processingObjectPath === item.objectPath}
+                    className="px-4 py-2 rounded-xl border border-highlight text-xs font-black text-accent disabled:opacity-50"
+                  >
+                    {processingObjectPath === item.objectPath ? "처리 중..." : "PDF 텍스트 재처리"}
+                  </button>
+                )}
                 <button onClick={() => downloadResource(item)} className="px-4 py-2 rounded-xl border border-highlight text-xs font-black text-accent">다운로드</button>
                 <button onClick={() => removeResource(item)} className="px-4 py-2 rounded-xl border border-highlight text-xs font-black text-red-500">삭제</button>
               </div>
