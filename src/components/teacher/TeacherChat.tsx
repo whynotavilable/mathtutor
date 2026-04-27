@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { RefreshCcw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { cn } from "../../lib/utils";
@@ -17,8 +17,13 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
   const [students, setStudents] = useState<UserProfile[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [resourceCards, setResourceCards] = useState<TeacherResourceItem[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const filteredStudents = students.filter((student) => !selectedClassKey || getClassKey(student) === selectedClassKey);
+
+  const focusChatInput = () => {
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  };
 
   const fetchStudents = async () => {
     const { data, error } = await supabase
@@ -99,6 +104,12 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
       setSelectedStudentId(filteredStudents[0].id);
     }
   }, [selectedStudentId, filteredStudents]);
+
+  useEffect(() => {
+    if (!loading) {
+      focusChatInput();
+    }
+  }, [loading, activeSessionId]);
 
   const buildTeacherArchiveContext = async () => {
     const targetStudents = selectedStudentId
@@ -209,6 +220,7 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
 
     const currentInput = input;
     setInput("");
+    focusChatInput();
     await fetchMessages(sid!);
 
     try {
@@ -247,6 +259,7 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
       await fetchMessages(sid!);
     } finally {
       setLoading(false);
+      focusChatInput();
     }
   };
 
@@ -304,7 +317,10 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
             ].map(q => (
               <button
                 key={q}
-                onClick={() => setInput(q)}
+                onClick={() => {
+                  setInput(q);
+                  focusChatInput();
+                }}
                 className="px-3 py-1.5 bg-paper hover:bg-highlight border border-highlight rounded-lg text-[10px] font-bold text-secondary-text transition-all"
               >
                 {q}
@@ -314,6 +330,7 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
         )}
         <div className="p-1 bg-paper border border-highlight rounded-xl focus-within:ring-1 focus-within:ring-accent transition-all flex gap-2">
           <input
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}

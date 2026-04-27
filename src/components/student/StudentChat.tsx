@@ -41,12 +41,17 @@ const StudentChat = ({
   const [resourceContext, setResourceContext] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const [activeTab, setActiveTab] = useState<'chat' | 'report'>('chat');
   const [report, setReport] = useState<LearningReport | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const isReportStale = hasSessionActivitySinceReport(messages, report);
   const canGenerateReport = messages.length > 2 && (!report || isReportStale);
+
+  const focusChatInput = () => {
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  };
 
   const fetchSessions = async () => {
     if (!profile) return;
@@ -324,6 +329,12 @@ ${chatContext}
     }
   }, [messages, loading, isTyping]);
 
+  useEffect(() => {
+    if (!loading && !isTyping && activeTab === 'chat') {
+      focusChatInput();
+    }
+  }, [loading, isTyping, activeTab, activeSessionId]);
+
   const formatReportText = (text: string) =>
     text.replace(/([^\n])\n?((\d+)\.\s)/g, "$1\n\n$2");
 
@@ -434,6 +445,7 @@ ${chatContext}
 
     const currentInput = input;
     setInput('');
+    focusChatInput();
 
     let sid = activeSessionId;
     if (!sid) {
@@ -528,6 +540,7 @@ ${chatContext}
       setLoading(false);
     } finally {
       setIsTyping(false);
+      focusChatInput();
     }
   };
 
@@ -745,7 +758,10 @@ ${chatContext}
                     ].map((text) => (
                       <button
                         key={text}
-                        onClick={() => setInput(text)}
+                        onClick={() => {
+                          setInput(text);
+                          focusChatInput();
+                        }}
                         className="w-full text-left px-4 py-3 bg-white border border-highlight rounded-xl text-xs font-semibold text-ink hover:border-accent hover:text-accent transition-all shadow-sm"
                       >
                         {text}
@@ -930,6 +946,7 @@ ${chatContext}
                 <Paperclip size={20} />
               </button>
               <input
+                ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSend()}
