@@ -17,6 +17,7 @@ export const DUMMY_STUDENT: Student = {
     currentGoals: "미분법 정복 및 수능 1등급",
     preferredStyle: "시각적 자료와 기하학적 설명 선호",
     difficultConcepts: "합성함수의 미분법, 변곡점의 기하학적 의미",
+    careerInterest: "",
     problemSolvingApproach: 'intuitive',
     induceSelfExplanation: true,
     hintLevel: 2,

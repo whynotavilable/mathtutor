@@ -41,15 +41,15 @@ const StudentSettings = ({
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-10 py-10">
+    <div className="mx-auto max-w-4xl space-y-6 py-6">
       <div>
         <h2 className="text-3xl font-black text-ink uppercase tracking-tighter mb-2">나의 학습 설정</h2>
         <p className="text-xs text-secondary-text font-bold uppercase tracking-widest">나의 학습 성향과 목표를 관리하세요.</p>
       </div>
 
-      <div className="space-y-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="p-6 bg-white border border-highlight rounded-2xl shadow-sm space-y-4">
+      <div className="space-y-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-5 bg-white border border-highlight rounded-2xl shadow-sm space-y-3">
             <label className="text-[10px] font-black text-accent uppercase tracking-widest block">문제 접근 방식</label>
             <div className="flex bg-paper p-1 rounded-xl border border-highlight">
               <button
@@ -62,7 +62,7 @@ const StudentSettings = ({
               >논리적 추론</button>
             </div>
           </div>
-          <div className="p-6 bg-white border border-highlight rounded-2xl shadow-sm space-y-4">
+          <div className="p-5 bg-white border border-highlight rounded-2xl shadow-sm space-y-3">
             <label className="text-[10px] font-black text-accent uppercase tracking-widest block">힌트 제공 수준</label>
             <div className="flex items-center gap-4">
               <input
@@ -77,8 +77,8 @@ const StudentSettings = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="p-6 bg-white border border-highlight rounded-2xl shadow-sm flex items-center justify-between">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-5 bg-white border border-highlight rounded-2xl shadow-sm flex items-center justify-between">
             <label className="text-[10px] font-black text-accent uppercase tracking-widest block">스스로 설명 유도 여부</label>
             <button
               onClick={() => setInstructions({ ...instructions, induceSelfExplanation: !instructions.induceSelfExplanation })}
@@ -87,7 +87,7 @@ const StudentSettings = ({
               <div className={cn("absolute top-1 w-4 h-4 bg-white rounded-full transition-all", instructions.induceSelfExplanation ? "left-7" : "left-1")} />
             </button>
           </div>
-          <div className="p-6 bg-white border border-highlight rounded-2xl shadow-sm flex items-center justify-between">
+          <div className="p-5 bg-white border border-highlight rounded-2xl shadow-sm flex items-center justify-between">
             <label className="text-[10px] font-black text-accent uppercase tracking-widest block">반복 학습 필요 여부</label>
             <button
               onClick={() => setInstructions({ ...instructions, repeatNeeded: !instructions.repeatNeeded })}
@@ -98,29 +98,32 @@ const StudentSettings = ({
           </div>
         </div>
 
-        {[
-          { label: "현재 학습 목표", key: "currentGoals", desc: "도달하고 싶은 목표 (예: 이번 중간고사 1등급)" },
-          { label: "선호 설명 방식", key: "preferredStyle", desc: "예: 그림을 통한 설명, 수식을 통한 증명" },
-          { label: "어려운 개념", key: "difficultConcepts", desc: "더 연습하고 싶은 개념" }
-        ].map((item) => (
-          <div key={item.key} className="p-8 bg-white border border-highlight rounded-2xl shadow-sm space-y-4">
-            <div className="flex justify-between items-start">
-              <div>
-                <label className="text-[10px] font-black text-accent uppercase tracking-widest block mb-1">{item.label}</label>
-                <p className="text-[10px] text-secondary-text font-bold">{item.desc}</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[
+            { label: "현재 학습 목표", key: "currentGoals", desc: "도달하고 싶은 목표 (예: 이번 중간고사 1등급)" },
+            { label: "선호 설명 방식", key: "preferredStyle", desc: "예: 그림을 통한 설명, 수식을 통한 증명" },
+            { label: "어려운 개념", key: "difficultConcepts", desc: "더 연습하고 싶은 개념" },
+            { label: "진로 또는 관심 영역", key: "careerInterest", desc: "예: 공학, 의학, 경제, 게임 개발, 데이터 분석" }
+          ].map((item) => (
+            <div key={item.key} className="p-5 bg-white border border-highlight rounded-2xl shadow-sm space-y-3">
+              <div className="flex justify-between items-start gap-3">
+                <div>
+                  <label className="text-[10px] font-black text-accent uppercase tracking-widest block mb-1">{item.label}</label>
+                  <p className="text-[10px] text-secondary-text font-bold">{item.desc}</p>
+                </div>
+                <span className="text-[10px] font-black text-green-500 bg-green-50 px-2 py-0.5 rounded border border-green-100 uppercase tracking-widest">활성</span>
               </div>
-              <span className="text-[10px] font-black text-green-500 bg-green-50 px-2 py-0.5 rounded border border-green-100 uppercase tracking-widest">활성</span>
+              <textarea
+                value={(instructions as any)[item.key]}
+                onChange={(e) => setInstructions({ ...instructions, [item.key]: e.target.value })}
+                className="w-full p-3 rounded-xl border border-highlight bg-paper text-sm font-semibold text-ink outline-none focus:ring-1 focus:ring-accent transition-all h-20 resize-none leading-relaxed"
+              />
             </div>
-            <textarea
-              value={(instructions as any)[item.key]}
-              onChange={(e) => setInstructions({ ...instructions, [item.key]: e.target.value })}
-              className="w-full mt-4 p-4 rounded-xl border border-highlight bg-paper text-sm font-semibold text-ink outline-none focus:ring-1 focus:ring-accent transition-all h-28 resize-none leading-relaxed"
-            />
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
 
-      <div className="pt-6">
+      <div className="pt-2">
         <button
           onClick={handleSave}
           disabled={saving}

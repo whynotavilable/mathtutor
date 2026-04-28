@@ -332,7 +332,7 @@ ${chatContext}
             <h3 className="text-sm font-black uppercase tracking-widest text-ink">학습 세션</h3>
             <p className="text-[10px] font-bold uppercase tracking-widest text-secondary-text">{selectedStudent ? `${selectedStudent.name} / ${getClassLabel(selectedStudent)}` : "학생을 선택하세요"}</p>
           </div>
-          <button onClick={openInstructionModal} disabled={!selectedStudent} className="rounded-xl bg-accent px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50">개별 지침</button>
+          <button onClick={openInstructionModal} disabled={!selectedStudent} className="rounded-xl bg-accent px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50">교사 개별 지침</button>
         </div>
         <div className="divide-y divide-highlight overflow-y-auto">
           {sessions.map((sessionItem) => (
@@ -443,7 +443,7 @@ ${chatContext}
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="w-full max-w-3xl overflow-hidden rounded-3xl border border-highlight bg-white shadow-2xl">
               <div className="flex items-center justify-between border-b border-highlight px-8 py-6">
                 <div>
-                  <h3 className="text-xl font-black uppercase tracking-tight text-ink">학생 개별 지침</h3>
+                  <h3 className="text-xl font-black uppercase tracking-tight text-ink">교사 개별 지침</h3>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-secondary-text">{selectedStudent?.name} 학생에게만 적용됩니다</p>
                 </div>
                 <button onClick={() => setShowInstructionModal(false)} className="rounded-full p-2 transition-colors hover:bg-paper"><X size={20} /></button>

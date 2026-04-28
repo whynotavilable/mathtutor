@@ -177,7 +177,7 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
         );
         setInsightMessage(
           riskStudents.length
-            ? `${riskStudents.slice(0, 3).map((student) => student.name).join(", ")} 학생에게 최근 보충 개입 신호가 포착되었습니다. ${selectedClassKey ? `${selectedClassKey.replace("-", "학년 ")}반` : "현재 선택 학급"} 기준으로 오개념 보고서와 개별 지침을 먼저 확인해보세요.`
+            ? `${riskStudents.slice(0, 3).map((student) => student.name).join(", ")} 학생에게 최근 보충 개입 신호가 포착되었습니다. ${selectedClassKey ? `${selectedClassKey.replace("-", "학년 ")}반` : "현재 선택 학급"} 기준으로 오개념 보고서와 교사 개별 지침을 먼저 확인해보세요.`
             : "최근 선택한 학급에서는 심각한 위험 신호가 적습니다. 오늘 생성된 보고서와 세션 수를 기준으로 안정적으로 운영 중입니다.",
         );
 
@@ -246,7 +246,7 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
 
         <div className="pt-10 grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto px-4">
           {[
-            { label: "학급 학습 지시문 설정", icon: BookOpen, action: () => setShowClassInstructions(true) },
+            { label: "교사 학급 지침", icon: BookOpen, action: () => setShowClassInstructions(true) },
             { label: "오늘의 학습 통계 확인", icon: BarChart3, action: () => {} }
           ].map((btn, idx) => (
             <button
@@ -272,7 +272,7 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
             >
               <header className="px-10 py-8 border-b border-highlight bg-paper/30 flex justify-between items-center">
                 <div>
-                  <h3 className="text-2xl font-black text-ink uppercase tracking-tight">학급 공통 학습 지시문</h3>
+                  <h3 className="text-2xl font-black text-ink uppercase tracking-tight">교사 학급 지침</h3>
                   <p className="text-[10px] text-secondary-text font-bold uppercase tracking-widest mt-1">학급: {selectedClassKey ? selectedClassKey.replace("-", "학년 ") + "반" : "전체 학급"} • AI 튜터 동작 방식</p>
                 </div>
                 <button onClick={() => setShowClassInstructions(false)} className="p-2 hover:bg-paper rounded-full transition-colors"><X size={24} /></button>

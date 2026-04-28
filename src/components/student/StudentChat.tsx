@@ -17,6 +17,7 @@ import { TeacherInstructionContext, buildTeacherPrompt } from "../../lib/instruc
 import { LearningReport, normalizeReportText, exportLearningReportPdf, loadStudentArchiveBundle, hasSessionActivitySinceReport } from "../../lib/archive";
 import { getClassLabel } from "../../lib/userUtils";
 import { Type } from "@google/genai";
+import { useNavigate } from "react-router-dom";
 
 const StudentChat = ({
   instructions,
@@ -29,6 +30,7 @@ const StudentChat = ({
   profile: UserProfile | null;
   session: any;
 }) => {
+  const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(() => localStorage.getItem('ACTIVE_SESSION_ID') || null);
@@ -733,7 +735,7 @@ ${chatContext}
               showSettings ? "bg-accent text-white border-accent" : "bg-white text-secondary-text border-highlight hover:border-accent hover:text-accent"
             )}
           >
-            맞춤 학습 설정
+            학습자 지침
           </button>
         </header>
 
@@ -976,7 +978,7 @@ ${chatContext}
             >
               <header className="p-6 border-b border-highlight flex justify-between items-center bg-gray-50/30">
                 <h4 className="font-bold text-sm text-ink flex items-center gap-2 uppercase tracking-wide">
-                  학습자 맞춤 설정
+                  학습자 지침
                 </h4>
                 <button onClick={() => setShowSettings(false)} className="p-1 hover:bg-paper rounded text-secondary-text transition-colors"><X size={18} /></button>
               </header>
@@ -989,6 +991,7 @@ ${chatContext}
                       { label: "현재 학습 목표", val: instructions.currentGoals },
                       { label: "선호 설명 방식", val: instructions.preferredStyle },
                       { label: "진행 중인 어려운 개념", val: instructions.difficultConcepts },
+                      { label: "진로 또는 관심 영역", val: instructions.careerInterest },
                       { label: "문제 접근성", val: instructions.problemSolvingApproach === 'intuitive' ? '직관 위주' : '논리 위주' }
                     ].map(stat => (
                       <div key={stat.label}>
@@ -1013,12 +1016,21 @@ ${chatContext}
                 </div>
               </div>
 
-              <div className="p-6 bg-paper/50 border-t border-highlight">
+              <div className="grid grid-cols-2 gap-3 p-6 bg-paper/50 border-t border-highlight">
+                <button
+                  onClick={() => {
+                    setShowSettings(false);
+                    navigate("/student/settings");
+                  }}
+                  className="w-full py-3 border border-highlight bg-white text-accent rounded-lg font-bold text-xs uppercase tracking-widest hover:border-accent transition-all shadow-sm"
+                >
+                  수정
+                </button>
                 <button
                   onClick={() => setShowSettings(false)}
                   className="w-full py-3 bg-accent text-white rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-sidebar transition-all shadow-md"
                 >
-                  확인 완료
+                  확인
                 </button>
               </div>
             </motion.div>

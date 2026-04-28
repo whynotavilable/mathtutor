@@ -63,7 +63,7 @@ const TeacherSettingsPanel = ({
         <div className="rounded-2xl border border-highlight bg-white p-6 shadow-sm">
           <p className="text-[10px] font-black uppercase tracking-widest text-accent">학급 지침</p>
           <h3 className="mt-3 text-xl font-black text-ink">상단 대시보드에서 관리</h3>
-          <p className="mt-2 text-sm font-semibold text-secondary-text">대시보드의 "학급 학습 지시문 설정"에서 전체 학생에게 바로 적용합니다.</p>
+          <p className="mt-2 text-sm font-semibold text-secondary-text">대시보드의 "교사 학급 지침"에서 전체 학생에게 바로 적용합니다.</p>
         </div>
         {isAdmin ? (
           <Link to="/teacher/approvals" className="rounded-2xl border border-highlight bg-white p-6 shadow-sm transition-all hover:border-accent hover:shadow-md">

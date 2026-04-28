@@ -17,7 +17,7 @@ const TUTORIAL_STEPS = {
     },
     {
       id: 'student-settings-btn',
-      title: '맞춤 학습 설정',
+      title: '학습자 지침',
       description: '학습 목표와 선호하는 설명 방식을 설정하면 더 개인화된 도움을 받을 수 있습니다.',
     },
     {

@@ -122,6 +122,7 @@ AI가 개념이나 풀이를 제시했을 때, 학생이 그냥 넘어가지 않
     instructions.currentGoals ? `학생의 현재 학습 목표: ${instructions.currentGoals}` : "",
     instructions.preferredStyle ? `선호하는 설명 방식: ${instructions.preferredStyle}` : "",
     instructions.difficultConcepts ? `어려워하는 개념: ${instructions.difficultConcepts}` : "",
+    instructions.careerInterest ? `진로 또는 관심 영역: ${instructions.careerInterest}` : "",
     `문제 접근 방식 선호: ${instructions.problemSolvingApproach}.`,
     `힌트 제공 수준: ${instructions.hintLevel}단계 (1=최소, 5=충분히).`,
     instructions.induceSelfExplanation ? "풀이를 알려주기 전에 학생이 먼저 자신의 생각을 설명하도록 유도한다." : "",

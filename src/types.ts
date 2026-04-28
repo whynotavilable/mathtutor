@@ -4,6 +4,7 @@ export interface StudentInstructions {
   currentGoals: string;
   preferredStyle: string;
   difficultConcepts: string;
+  careerInterest: string;
   problemSolvingApproach: 'intuitive' | 'logical';
   induceSelfExplanation: boolean;
   hintLevel: number;

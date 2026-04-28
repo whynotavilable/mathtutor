@@ -19,6 +19,7 @@ export const DEFAULT_STUDENT_INSTRUCTIONS: StudentInstructions = {
   currentGoals: "",
   preferredStyle: "",
   difficultConcepts: "",
+  careerInterest: "",
   problemSolvingApproach: "intuitive",
   induceSelfExplanation: true,
   hintLevel: 2,
