@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type MouseEvent } from "react";
 import { useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { X, RefreshCcw, BookOpenCheck, FileDown } from "lucide-react";
@@ -41,6 +41,7 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
   const isReportStale = hasSessionActivitySinceReport(messages, report);
   const [latestReportByStudent, setLatestReportByStudent] = useState<Record<string, any>>({});
   const [latestSessionByStudent, setLatestSessionByStudent] = useState<Record<string, any>>({});
+  const [signalTooltip, setSignalTooltip] = useState<{ x: number; y: number; label: string; reason: string } | null>(null);
 
   const fetchStudents = async () => {
     const { data, error } = await supabase.from("users").select("*").eq("role", "student").eq("status", "approved").order("grade", { ascending: true }).order("class", { ascending: true }).order("number", { ascending: true });
@@ -169,6 +170,17 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
 
   const signalColorClass = { green: "bg-green-400", yellow: "bg-yellow-400", red: "bg-red-500" };
   const signalLabel = { green: "정상 학습 중", yellow: "학습 주의 필요", red: "교사 개입 필요" };
+
+  const updateSignalTooltip = (event: MouseEvent, student: UserProfile, signal: "green" | "yellow" | "red") => {
+    const width = 208;
+    const estimatedHeight = 96;
+    setSignalTooltip({
+      x: Math.max(12, event.clientX - width - 14),
+      y: Math.min(window.innerHeight - estimatedHeight - 12, event.clientY + 16),
+      label: signalLabel[signal],
+      reason: getStudentSignalReason(student),
+    });
+  };
 
   const openInstructionModal = () => {
     if (!selectedStudent) return;
@@ -309,12 +321,13 @@ ${chatContext}
             return (
               <button key={student.id} onClick={() => setSelectedStudent(student)} className={cn("group relative w-full px-5 py-4 text-left transition-all hover:bg-paper", selectedStudent?.id === student.id && "bg-paper")}>
                 <div className="flex items-center gap-2.5">
-                  <div className="relative flex-shrink-0">
+                  <div
+                    className="relative flex-shrink-0"
+                    onMouseEnter={(event) => updateSignalTooltip(event, student, signal)}
+                    onMouseMove={(event) => updateSignalTooltip(event, student, signal)}
+                    onMouseLeave={() => setSignalTooltip(null)}
+                  >
                     <span className={`inline-block w-2 h-2 rounded-full ${signalColorClass[signal]}`} />
-                    <div className="absolute bottom-full left-0 mb-2 w-52 rounded-xl bg-gray-900 px-3 py-2.5 text-[10px] font-semibold leading-relaxed text-white shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-normal">
-                      <p className="font-black mb-1 text-[9px] uppercase tracking-widest opacity-60">{signalLabel[signal]}</p>
-                      <p>{getStudentSignalReason(student)}</p>
-                    </div>
                   </div>
                   <div>
                     <p className="text-sm font-black text-ink">{student.name}</p>
@@ -437,6 +450,15 @@ ${chatContext}
           )}
         </div>
       </div>
+      {signalTooltip && (
+        <div
+          className="pointer-events-none fixed z-[300] w-52 rounded-xl bg-gray-900 px-3 py-2.5 text-[10px] font-semibold leading-relaxed text-white shadow-xl whitespace-normal"
+          style={{ left: signalTooltip.x, top: signalTooltip.y }}
+        >
+          <p className="font-black mb-1 text-[9px] uppercase tracking-widest opacity-60">{signalTooltip.label}</p>
+          <p>{signalTooltip.reason}</p>
+        </div>
+      )}
       <AnimatePresence>
         {showInstructionModal && (
           <div className="fixed inset-0 z-[220] flex items-center justify-center bg-sidebar/60 p-6 backdrop-blur-sm">
