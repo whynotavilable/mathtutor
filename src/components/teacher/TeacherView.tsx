@@ -3,7 +3,7 @@ import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
   LayoutDashboard, BarChart3, BookOpen, Database, MessageSquare,
-  ShieldCheck, Settings, X, Menu, LogOut, CircleUser, PanelLeftClose, PanelLeftOpen
+  ShieldCheck, Settings, X, Menu, LogOut, CircleUser, PanelLeftClose, PanelLeftOpen, Trash2
 } from "lucide-react";
 import { cn, formatDate } from "../../lib/utils";
 import { supabase } from "../../supabase";
@@ -26,28 +26,30 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any; profile
   const isAdmin = isAdminUser(profile);
   const [teacherStudents, setTeacherStudents] = useState<UserProfile[]>([]);
   const [selectedClassKey, setSelectedClassKey] = useState("");
+  const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
+
+  const fetchTeacherStudents = async () => {
+    const { data, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("role", "student")
+      .eq("status", "approved")
+      .order("grade", { ascending: true })
+      .order("class", { ascending: true })
+      .order("number", { ascending: true });
+    if (error) {
+      console.error("Failed to fetch class options:", error);
+      return;
+    }
+    const nextStudents = ((data || []) as UserProfile[]).filter(isTeacherVisibleStudent);
+    setTeacherStudents(nextStudents);
+    if (!selectedClassKey && nextStudents.length) {
+      const firstKey = getClassKey(nextStudents[0]);
+      if (firstKey) setSelectedClassKey(firstKey);
+    }
+  };
 
   useEffect(() => {
-    const fetchTeacherStudents = async () => {
-      const { data, error } = await supabase
-        .from("users")
-        .select("*")
-        .eq("role", "student")
-        .eq("status", "approved")
-        .order("grade", { ascending: true })
-        .order("class", { ascending: true })
-        .order("number", { ascending: true });
-      if (error) {
-        console.error("Failed to fetch class options:", error);
-        return;
-      }
-      const nextStudents = ((data || []) as UserProfile[]).filter(isTeacherVisibleStudent);
-      setTeacherStudents(nextStudents);
-      if (!selectedClassKey && nextStudents.length) {
-        const firstKey = getClassKey(nextStudents[0]);
-        if (firstKey) setSelectedClassKey(firstKey);
-      }
-    };
     fetchTeacherStudents();
   }, [selectedClassKey]);
 
@@ -86,6 +88,47 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any; profile
     } catch (err) {
       console.error("Error updating status:", err);
       alert("상태 업데이트에 실패했습니다.");
+    }
+  };
+
+  const handleDeleteAccount = async (request: UserProfile) => {
+    if (request.id === profile?.id) {
+      alert("현재 로그인한 관리자 계정은 이 화면에서 삭제할 수 없습니다.");
+      return;
+    }
+
+    const label = `${request.name || "이름 없음"} (${request.email || "이메일 없음"})`;
+    if (!window.confirm(`${label} 계정을 삭제할까요?\n\n사용자 프로필과 연결된 대화/보고서 기록이 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.`)) return;
+
+    setDeletingAccountId(request.id);
+    try {
+      const { data: sessions, error: sessionError } = await supabase
+        .from("chat_sessions")
+        .select("id")
+        .eq("user_id", request.id);
+      if (sessionError) throw sessionError;
+
+      const sessionIds = (sessions || []).map((sessionItem) => sessionItem.id);
+      if (sessionIds.length > 0) {
+        const { error: messageError } = await supabase.from("chat_messages").delete().in("session_id", sessionIds);
+        if (messageError) throw messageError;
+
+        const { error: reportError } = await supabase.from("reports").delete().in("session_id", sessionIds);
+        if (reportError) throw reportError;
+
+        const { error: chatSessionError } = await supabase.from("chat_sessions").delete().in("id", sessionIds);
+        if (chatSessionError) throw chatSessionError;
+      }
+
+      const { error: userError } = await supabase.from("users").delete().eq("id", request.id);
+      if (userError) throw userError;
+
+      await Promise.all([fetchRequests(), fetchTeacherStudents()]);
+    } catch (err) {
+      console.error("Error deleting account:", err);
+      alert("계정 삭제에 실패했습니다. 권한 또는 연결된 데이터 정책을 확인해 주세요.");
+    } finally {
+      setDeletingAccountId(null);
     }
   };
 
@@ -198,7 +241,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any; profile
                   <div className="space-y-8">
                     <div>
                       <h2 className="text-2xl font-black text-ink uppercase tracking-tighter mb-1">가입 승인 관리</h2>
-                      <p className="text-xs text-secondary-text font-bold uppercase tracking-widest">신규 학생 가입 요청 관리</p>
+                      <p className="text-xs text-secondary-text font-bold uppercase tracking-widest">가입 요청 및 기존 계정 관리</p>
                     </div>
                     <div className="bg-white rounded-xl border border-highlight overflow-hidden shadow-sm">
                       <div className="overflow-x-auto">
@@ -214,7 +257,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any; profile
                           <tbody className="divide-y divide-highlight">
                             {enrollRequests.length === 0 ? (
                               <tr>
-                                <td colSpan={4} className="px-6 py-20 text-center text-gray-400 font-bold text-sm">대기 중인 요청이 없습니다.</td>
+                                <td colSpan={4} className="px-6 py-20 text-center text-gray-400 font-bold text-sm">표시할 계정이 없습니다.</td>
                               </tr>
                             ) : (
                               enrollRequests.map((request) => (
@@ -227,7 +270,9 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any; profile
                                       </div>
                                       <div>
                                         <div className="text-sm font-black text-ink">{request.name}</div>
-                                        <div className="text-xs text-secondary-text font-bold">{request.grade}학년 {request.class}반 {request.number}번</div>
+                                        <div className="text-xs text-secondary-text font-bold">
+                                          {request.role === "student" ? `${request.grade || "-"}학년 ${request.class || "-"}반 ${request.number || "-"}번` : "교사 계정"}
+                                        </div>
                                       </div>
                                     </div>
                                   </td>
@@ -248,11 +293,27 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any; profile
                                   <td className="px-6 py-4 text-right">
                                     {request.status === "pending" ? (
                                       <div className="flex justify-end gap-2 text-xs">
+                                        <button
+                                          onClick={() => handleDeleteAccount(request)}
+                                          disabled={deletingAccountId === request.id}
+                                          className="inline-flex items-center gap-1 px-2 py-1 md:px-3 md:py-1.5 border border-red-100 text-red-500 rounded-lg font-black hover:bg-red-50 transition-all uppercase tracking-widest disabled:opacity-50"
+                                        >
+                                          <Trash2 size={12} /> {deletingAccountId === request.id ? "삭제 중" : "삭제"}
+                                        </button>
                                         <button onClick={() => handleApprove(request.id, false)} className="px-2 py-1 md:px-3 md:py-1.5 border border-highlight text-red-500 rounded-lg font-black hover:bg-red-50 transition-all uppercase tracking-widest">반려</button>
                                         <button onClick={() => handleApprove(request.id, true)} className="px-2 py-1 md:px-3 md:py-1.5 bg-accent text-white rounded-lg font-black hover:bg-sidebar transition-all uppercase tracking-widest">승인</button>
                                       </div>
                                     ) : (
-                                      <span className="text-xs text-gray-300 font-bold italic">처리 완료</span>
+                                      <div className="flex justify-end gap-2 text-xs">
+                                        <span className="inline-flex items-center text-xs text-gray-300 font-bold italic">처리 완료</span>
+                                        <button
+                                          onClick={() => handleDeleteAccount(request)}
+                                          disabled={deletingAccountId === request.id}
+                                          className="inline-flex items-center gap-1 px-2 py-1 md:px-3 md:py-1.5 border border-red-100 text-red-500 rounded-lg font-black hover:bg-red-50 transition-all uppercase tracking-widest disabled:opacity-50"
+                                        >
+                                          <Trash2 size={12} /> {deletingAccountId === request.id ? "삭제 중" : "삭제"}
+                                        </button>
+                                      </div>
                                     )}
                                   </td>
                                 </tr>
