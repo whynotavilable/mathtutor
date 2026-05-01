@@ -18,7 +18,11 @@ import {
   DEFAULT_TEACHER_INSTRUCTIONS
 } from "../../lib/instructions";
 import { getClassKey, getClassLabel, isTeacherVisibleStudent } from "../../lib/userUtils";
-import { getStudentSignal as getStudentSignalStatus, getStudentSignalReason as getStudentSignalReasonText } from "../../lib/studentSignals";
+import {
+  getStudentSignal as getStudentSignalStatus,
+  getStudentSignalReason as getStudentSignalReasonText,
+  StudentSignalEvidence,
+} from "../../lib/studentSignals";
 
 const CLASS_PERFORMANCE_DATA = [
   { month: '3월', score: 65 },
@@ -54,6 +58,7 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
   const [dashboardStudents, setDashboardStudents] = useState<UserProfile[]>([]);
   const [latestSessionsByStudent, setLatestSessionsByStudent] = useState<Record<string, any>>({});
   const [latestReportByStudent, setLatestReportByStudent] = useState<Record<string, any>>({});
+  const [signalEvidenceByStudent, setSignalEvidenceByStudent] = useState<Record<string, StudentSignalEvidence>>({});
   const [performanceData, setPerformanceData] = useState(CLASS_PERFORMANCE_DATA);
   const [conceptData, setConceptData] = useState(UNIT_UNDERSTANDING_DATA);
   const [insightMessage, setInsightMessage] = useState("최근 학습 데이터가 아직 충분하지 않습니다. 학생들의 첫 대화를 모아 인사이트를 생성해보세요.");
@@ -105,6 +110,12 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
 
         if (reportsError) throw reportsError;
 
+        const { data: messages, error: messagesError } = sessionIds.length
+          ? await supabase.from("chat_messages").select("session_id, role").in("session_id", sessionIds)
+          : { data: [], error: null } as any;
+
+        if (messagesError) throw messagesError;
+
         const latestByStudent = (sessions || []).reduce((acc: Record<string, any>, session: any) => {
           if (!acc[session.user_id]) acc[session.user_id] = session;
           return acc;
@@ -126,11 +137,34 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
         });
         setLatestReportByStudent(reportByStudent);
 
+        const messageStatsBySession = (messages || []).reduce((acc: Record<string, { user: number; total: number }>, message: any) => {
+          if (!acc[message.session_id]) acc[message.session_id] = { user: 0, total: 0 };
+          acc[message.session_id].total += 1;
+          if (message.role === "user") acc[message.session_id].user += 1;
+          return acc;
+        }, {});
+
+        const nextSignalEvidence = approvedStudents.reduce<Record<string, StudentSignalEvidence>>((acc, student) => {
+          const latestSession = latestByStudent[student.id];
+          const parsed = parseInstructionState(student.instructions);
+          const studentSettings = parsed.studentSettings;
+          const messageStats = latestSession ? messageStatsBySession[latestSession.id] : undefined;
+          acc[student.id] = {
+            latestSessionAt: latestSession?.created_at,
+            userMessageCount: messageStats?.user || 0,
+            totalMessageCount: messageStats?.total || 0,
+            hasLearningGoal: Boolean((studentSettings.currentGoals || "").trim()),
+            hasCareerInterest: Boolean((studentSettings.careerInterest || "").trim()),
+          };
+          return acc;
+        }, {});
+        setSignalEvidenceByStudent(nextSignalEvidence);
+
         const today = new Date().toISOString().slice(0, 10);
         const todaysSessions = (sessions || []).filter((session: any) => (session.created_at || "").slice(0, 10) === today).length;
         const reportRows = reports || [];
         const atRiskCount = approvedStudents.filter((student) =>
-          getStudentSignalStatus(reportByStudent[student.id], Boolean(latestByStudent[student.id])) === "red",
+          getStudentSignalStatus(reportByStudent[student.id], Boolean(latestByStudent[student.id]), nextSignalEvidence[student.id]) === "red",
         ).length;
 
         const monthlyScoreMap = new Map<string, { month: string; total: number; count: number }>();
@@ -185,7 +219,7 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
         setConceptData(nextConceptData);
 
         const riskStudents = approvedStudents.filter(
-          (student) => getStudentSignalStatus(reportByStudent[student.id], Boolean(latestByStudent[student.id])) === "red",
+          (student) => getStudentSignalStatus(reportByStudent[student.id], Boolean(latestByStudent[student.id]), nextSignalEvidence[student.id]) === "red",
         );
         setInsightMessage(
           riskStudents.length
@@ -257,11 +291,19 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
   };
 
   const getStudentSignal = (student: UserProfile): "green" | "yellow" | "red" => {
-    return getStudentSignalStatus(latestReportByStudent?.[student.id], Boolean(latestSessionsByStudent?.[student.id]));
+    return getStudentSignalStatus(
+      latestReportByStudent?.[student.id],
+      Boolean(latestSessionsByStudent?.[student.id]),
+      signalEvidenceByStudent[student.id],
+    );
   };
 
   const getStudentSignalReason = (student: UserProfile): string => {
-    return getStudentSignalReasonText(latestReportByStudent?.[student.id], Boolean(latestSessionsByStudent?.[student.id]));
+    return getStudentSignalReasonText(
+      latestReportByStudent?.[student.id],
+      Boolean(latestSessionsByStudent?.[student.id]),
+      signalEvidenceByStudent[student.id],
+    );
   };
 
   return (
