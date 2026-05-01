@@ -320,16 +320,27 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
 
         <div className="pt-10 grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto px-4">
           {[
-            { label: "교사 학급 지침", icon: BookOpen, action: () => setShowClassInstructions(true) },
-            { label: "오늘의 학습 통계 확인", icon: BarChart3, action: () => {} }
+            { label: "교사 학급 지침", icon: BookOpen, action: () => setShowClassInstructions(true), ready: true },
+            { label: "오늘의 학습 통계 확인", icon: BarChart3, action: undefined, ready: false }
           ].map((btn, idx) => (
             <button
               key={idx}
               onClick={btn.action}
-              className="flex items-center justify-center gap-3 bg-white border border-highlight p-6 rounded-3xl hover:border-accent hover:shadow-xl transition-all group"
+              disabled={!btn.ready}
+              className={cn(
+                "flex items-center justify-center gap-3 bg-white border border-highlight p-6 rounded-3xl transition-all group",
+                btn.ready
+                  ? "cursor-pointer hover:border-accent hover:shadow-xl"
+                  : "cursor-default opacity-80"
+              )}
             >
-              <btn.icon size={24} className="text-accent group-hover:scale-110 transition-transform" />
+              <btn.icon size={24} className={cn("text-accent transition-transform", btn.ready && "group-hover:scale-110")} />
               <span className="font-black text-xs uppercase tracking-widest text-ink">{btn.label}</span>
+              {!btn.ready && (
+                <span className="rounded-full bg-paper px-2 py-1 text-[9px] font-black text-secondary-text">
+                  준비중
+                </span>
+              )}
             </button>
           ))}
         </div>

@@ -168,7 +168,7 @@ const TeacherView = ({ session, profile, handleLogout, theme, toggleTheme }: { s
         <nav className="flex flex-col">
           <SidebarItem icon={LayoutDashboard} label="대시보드" to="/teacher" active={location.pathname === "/teacher"} onClick={() => setIsSidebarOpen(false)} id="teacher-dashboard-link" collapsed={isSidebarCollapsed} />
           <SidebarItem icon={BarChart3} label="학생 분석" to="/teacher/analysis" active={location.pathname.startsWith("/teacher/analysis")} onClick={() => setIsSidebarOpen(false)} id="teacher-analysis-link" collapsed={isSidebarCollapsed} />
-          <SidebarItem icon={BookOpen} label="교육과정" to="/teacher/curriculum" active={location.pathname === "/teacher/curriculum"} onClick={() => setIsSidebarOpen(false)} collapsed={isSidebarCollapsed} />
+          <SidebarItem icon={BookOpen} label="교육과정" to="/teacher/curriculum" active={location.pathname === "/teacher/curriculum"} onClick={() => setIsSidebarOpen(false)} collapsed={isSidebarCollapsed} badge="준비중" />
           <SidebarItem icon={Database} label="교과자료" to="/teacher/resources" active={location.pathname === "/teacher/resources"} onClick={() => setIsSidebarOpen(false)} collapsed={isSidebarCollapsed} />
           <SidebarItem icon={MessageSquare} label="교사 채팅" to="/teacher/chat" active={location.pathname === "/teacher/chat"} onClick={() => setIsSidebarOpen(false)} collapsed={isSidebarCollapsed} />
           {isAdmin && <SidebarItem icon={ShieldCheck} label="승인 관리" to="/teacher/approvals" active={location.pathname === "/teacher/approvals"} onClick={() => setIsSidebarOpen(false)} collapsed={isSidebarCollapsed} />}
