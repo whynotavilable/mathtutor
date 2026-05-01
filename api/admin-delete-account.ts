@@ -45,7 +45,7 @@ export default async function handler(req: any, res: any) {
 
   if (!supabaseUrl || !serviceRoleKey) {
     return res.status(500).json({
-      error: "Server delete API is not configured. Set SUPABASE_SERVICE_ROLE_KEY in Vercel environment variables.",
+      error: "계정 삭제 API 설정이 필요합니다. Vercel 환경변수에 SUPABASE_SERVICE_ROLE_KEY를 추가해 주세요.",
     });
   }
 
