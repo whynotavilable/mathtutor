@@ -37,7 +37,9 @@ const UNIT_UNDERSTANDING_DATA = [
 
 const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile | null; selectedClassKey: string }) => {
   const [showClassInstructions, setShowClassInstructions] = useState(false);
-  const [classInstructions, setClassInstructions] = useState<TeacherInstructions>({
+
+  const DEFAULT_CLASS_INSTRUCTIONS: TeacherInstructions = {
+    ...DEFAULT_TEACHER_INSTRUCTIONS,
     weeklyGoals: "미분법 단원 심화 학습 및 문제 풀이",
     keyConcepts: "도함수, 합성함수의 미분, 몫의 미분법",
     solvingGuideline: "공식 암기보다는 유도 과정을 이해하고 설명하도록 유도",
@@ -46,7 +48,8 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
     aiQuestionStyle: 'inductive',
     aiMisconceptionResponse: "즉시 정정하기보다 반례를 들어 스스로 깨닫게 함",
     aiEngagementStrategy: "수능 실전 응용 사례를 언급하여 동기 부여",
-  });
+  };
+  const [classInstructions, setClassInstructions] = useState<TeacherInstructions>(DEFAULT_CLASS_INSTRUCTIONS);
   const [saving, setSaving] = useState(false);
   const [dashboardStudents, setDashboardStudents] = useState<UserProfile[]>([]);
   const [latestSessionsByStudent, setLatestSessionsByStudent] = useState<Record<string, any>>({});
@@ -60,6 +63,15 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
     { label: "평균 성취도", value: "-", icon: BarChart3, color: "text-purple-600", bg: "bg-purple-50" },
     { label: "도움 필요 학생", value: "0", icon: ClipboardCheck, color: "text-red-600", bg: "bg-red-50" }
   ]);
+
+  // Load saved class instructions from teacher's own profile once profile is available
+  useEffect(() => {
+    if (!profile) return;
+    const saved = parseInstructionState(profile.instructions).teacherContext?.classSettings;
+    if (saved && Object.keys(saved).length > 0) {
+      setClassInstructions((prev) => ({ ...prev, ...saved }));
+    }
+  }, [profile?.id]);
 
   useEffect(() => {
     const loadDashboard = async () => {
@@ -199,6 +211,27 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
     if (!profile) return;
     try {
       setSaving(true);
+      const teacherContextPatch = {
+        classInstruction: buildTeacherPrompt(classInstructions),
+        classSettings: { ...classInstructions },
+        updatedAt: new Date().toISOString(),
+        updatedBy: profile.id,
+        updatedByEmail: profile.email,
+      };
+
+      // 1. Save to teacher's own profile so instructions persist across sessions
+      const teacherParsed = parseInstructionState(profile.instructions);
+      await supabase
+        .from("users")
+        .update({
+          instructions: stringifyInstructionState({
+            studentSettings: teacherParsed.studentSettings,
+            teacherContext: { ...teacherParsed.teacherContext, ...teacherContextPatch },
+          }),
+        })
+        .eq("id", profile.id);
+
+      // 2. Push to all students in the selected class so AI picks up the context
       const updates = dashboardStudents.map(async (student) => {
         const parsed = parseInstructionState(student.instructions);
         return supabase
@@ -206,14 +239,7 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
           .update({
             instructions: stringifyInstructionState({
               studentSettings: parsed.studentSettings,
-              teacherContext: {
-                ...parsed.teacherContext,
-                classInstruction: buildTeacherPrompt(classInstructions),
-                classSettings: { ...classInstructions },
-                updatedAt: new Date().toISOString(),
-                updatedBy: profile.id,
-                updatedByEmail: profile.email,
-              },
+              teacherContext: { ...parsed.teacherContext, ...teacherContextPatch },
             }),
           })
           .eq("id", student.id);
@@ -397,8 +423,8 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Student List */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-highlight overflow-hidden shadow-sm">
-          <div className="p-5 border-b border-highlight flex justify-between items-center bg-gray-50/30">
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-highlight shadow-sm">
+          <div className="p-5 border-b border-highlight flex justify-between items-center bg-gray-50/30 rounded-t-xl">
             <div className="flex items-center gap-3">
               <h3 className="font-bold text-sm text-ink uppercase tracking-wide">우리 반 학생 목록</h3>
               <div className="flex items-center gap-3 text-[11px] font-semibold text-secondary-text">
@@ -435,7 +461,7 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
                     </div>
                   </div>
                   <div className="w-8 h-8 rounded-full bg-highlight border border-gray-200 flex items-center justify-center text-xs font-bold text-accent">
-                    {s.name[0]}
+                    {s.name?.[0] ?? "?"}
                   </div>
                   <div>
                     <p className="text-sm font-bold text-ink">{s.name}</p>

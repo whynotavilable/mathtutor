@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { RefreshCcw } from "lucide-react";
+import { RefreshCcw, Plus } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { cn } from "../../lib/utils";
 import { supabase } from "../../supabase";
 import { Message } from "../../types";
@@ -13,6 +16,8 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [userHasSent, setUserHasSent] = useState(false);
   const [input, setInput] = useState("");
   const [students, setStudents] = useState<UserProfile[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState("");
@@ -100,10 +105,11 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
       setSelectedStudentId("");
       return;
     }
-    if (!selectedStudentId || !filteredStudents.some((student) => student.id === selectedStudentId)) {
-      setSelectedStudentId(filteredStudents[0].id);
-    }
-  }, [selectedStudentId, filteredStudents]);
+    // Only auto-select if current selection is no longer valid in the filtered list
+    setSelectedStudentId((prev) =>
+      prev && filteredStudents.some((s) => s.id === prev) ? prev : filteredStudents[0].id
+    );
+  }, [filteredStudents]);
 
   useEffect(() => {
     if (!loading) {
@@ -187,9 +193,21 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
     return ranked.length ? ranked.join("\n\n---\n\n") : "연결된 교과자료 메타데이터가 없습니다.";
   };
 
+  const handleNewChat = () => {
+    setActiveSessionId(null);
+    setMessages([{
+      id: '1', role: 'assistant',
+      content: '안녕하세요, 선생님! 오늘은 어떤 학생의 학습 데이터를 분석해 드릴까요? 혹은 수업 자료 제작에 도움이 필요하신가요?',
+      timestamp: new Date()
+    }]);
+    setUserHasSent(false);
+    focusChatInput();
+  };
+
   const handleSend = async () => {
     if (!input.trim() || !profile) return;
     setLoading(true);
+    setUserHasSent(true);
 
     let sid = activeSessionId;
     if (!sid) {
@@ -223,6 +241,7 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
     focusChatInput();
     await fetchMessages(sid!);
 
+    setIsTyping(true);
     try {
       const archiveContext = await buildTeacherArchiveContext();
       const resourceContext = buildTeacherResourceContext(currentInput);
@@ -258,6 +277,7 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
         .insert({ session_id: sid!, role: 'assistant', content: `오류: ${error?.message || "AI 연결 실패"}` });
       await fetchMessages(sid!);
     } finally {
+      setIsTyping(false);
       setLoading(false);
       focusChatInput();
     }
@@ -270,7 +290,13 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
           <h2 className="text-lg font-black text-ink dark:text-white uppercase tracking-tight">AI 수업 보조 어시스턴트</h2>
           <p className="text-[10px] text-secondary-text font-bold uppercase tracking-widest">학생 md 아카이브와 보고서를 근거로 답변합니다</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleNewChat}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-highlight bg-paper hover:bg-highlight text-xs font-bold text-secondary-text transition-all"
+          >
+            <Plus size={13} /> 새 대화
+          </button>
           <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
           <span className="text-[10px] font-black text-green-600 uppercase">연결됨</span>
         </div>
@@ -301,14 +327,23 @@ const TeacherChat = ({ profile, session, selectedClassKey }: { profile: UserProf
               "p-4 rounded-2xl text-sm leading-relaxed shadow-sm border",
               m.role === 'user' ? "bg-blue-500 text-white border-blue-600" : "bg-white dark:bg-gray-900 border-highlight text-ink dark:text-white"
             )}>
-              <ReactMarkdown>{m.content}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{m.content}</ReactMarkdown>
             </div>
           </div>
         ))}
+        {(loading || isTyping) && (
+          <div className="flex items-start gap-3 mr-auto">
+            <div className="bg-white dark:bg-gray-900 border border-highlight rounded-2xl px-4 py-3 flex items-center gap-1.5 shadow-sm">
+              <span className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="p-4 border-t border-highlight bg-white dark:bg-gray-800 shrink-0">
-        {messages.length === 1 && (
+        {!userHasSent && (
           <div className="flex flex-wrap gap-2 mb-4">
             {[
               "선택한 학생의 최근 학습 변화를 md 기록 기준으로 요약해줘",

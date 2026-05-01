@@ -12,6 +12,7 @@ import { UserProfile } from "../../lib/ai";
 import { TeacherInstructionContext, parseInstructionState, DEFAULT_STUDENT_INSTRUCTIONS } from "../../lib/instructions";
 import { DUMMY_STUDENT } from "../../constants";
 import SidebarItem from "../common/SidebarItem";
+import ThemeToggle from "../common/ThemeToggle";
 import StudentChat from "./StudentChat";
 import StudentHistory from "./StudentHistory";
 import StudentSettings from "./StudentSettings";
@@ -22,12 +23,16 @@ const StudentView = ({
   fetchProfile,
   handleTestLogin,
   handleLogout,
+  theme,
+  toggleTheme,
 }: {
   session: any;
   profile: UserProfile | null;
   fetchProfile: (session: any) => Promise<void>;
   handleTestLogin: () => Promise<void>;
   handleLogout: () => Promise<void>;
+  theme: string;
+  toggleTheme: () => void;
 }) => {
   const location = useLocation();
   const [instructions, setInstructions] = useState<StudentInstructions>({ ...DEFAULT_STUDENT_INSTRUCTIONS });
@@ -312,6 +317,7 @@ const StudentView = ({
               {location.pathname === "/student/settings" && "학습 설정"}
             </span>
           </div>
+          <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
         </header>
         <div className={cn(
           "flex-1 p-4 md:p-6",

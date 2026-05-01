@@ -1,4 +1,3 @@
-import { jsPDF } from "jspdf";
 import { Message } from "../types";
 import { supabase } from "../supabase";
 import { UserProfile } from "./ai";
@@ -171,61 +170,46 @@ export const exportLearningReportPdf = ({
   misconceptions: string;
   recommendations: string;
 }) => {
-  const pdf = new jsPDF({ unit: "mm", format: "a4" });
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const marginX = 16;
-  let cursorY = 18;
+  const escape = (s: string) =>
+    (s || "-").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br/>");
 
-  const ensureSpace = (requiredHeight = 10) => {
-    if (cursorY + requiredHeight > pageHeight - 18) {
-      pdf.addPage();
-      cursorY = 18;
-    }
-  };
-
-  const addWrappedText = (label: string, value: string) => {
-    ensureSpace(18);
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(12);
-    pdf.text(label, marginX, cursorY);
-    cursorY += 7;
-    pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(10.5);
-    const lines = pdf.splitTextToSize(value || "-", pageWidth - marginX * 2);
-    lines.forEach((line: string) => {
-      ensureSpace(6);
-      pdf.text(line, marginX, cursorY);
-      cursorY += 5.5;
-    });
-    cursorY += 4;
-  };
-
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(18);
-  pdf.text(title, marginX, cursorY);
-  cursorY += 8;
-
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(10);
-  [
-    studentName ? `Student: ${studentName}` : "",
-    classLabel ? `Class: ${classLabel}` : "",
-    sessionTitle ? `Session: ${sessionTitle}` : "",
-    createdAt ? `Created: ${new Date(createdAt).toLocaleString()}` : "",
+  const meta = [
+    studentName ? `학생: ${studentName}` : "",
+    classLabel ? `학급: ${classLabel}` : "",
+    sessionTitle ? `세션: ${sessionTitle}` : "",
+    createdAt ? `생성일: ${new Date(createdAt).toLocaleString("ko-KR")}` : "",
   ]
     .filter(Boolean)
-    .forEach((line) => {
-      pdf.text(line, marginX, cursorY);
-      cursorY += 5;
-    });
+    .map((line) => `<p style="margin:2px 0;font-size:12px;color:#555;">${escape(line)}</p>`)
+    .join("");
 
-  cursorY += 4;
-  addWrappedText("1. Learning Summary", summary);
-  addWrappedText("2. Misconceptions", misconceptions);
-  addWrappedText("3. Recommendations", recommendations);
+  const section = (label: string, content: string) => `
+    <div style="margin-top:20px;">
+      <h2 style="font-size:14px;font-weight:700;color:#1a1a1a;border-bottom:1px solid #e0e0e0;padding-bottom:4px;">${label}</h2>
+      <p style="font-size:13px;line-height:1.8;color:#333;white-space:pre-wrap;">${escape(content)}</p>
+    </div>`;
 
-  pdf.save(`${sanitizeArchiveSegment(studentName || "learning-report")}.pdf`);
+  const html = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>${escape(title)}</title>
+<style>
+  body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; padding: 32px; max-width: 740px; margin: 0 auto; }
+  @media print { body { padding: 16px; } }
+</style></head><body>
+  <h1 style="font-size:20px;font-weight:900;margin-bottom:8px;">${escape(title)}</h1>
+  ${meta}
+  ${section("1. 학습 요약", summary)}
+  ${section("2. 오개념 / 취약점", misconceptions)}
+  ${section("3. 개선 권고사항", recommendations)}
+</body></html>`;
+
+  const win = window.open("", "_blank");
+  if (!win) {
+    alert("팝업이 차단되었습니다. 브라우저 주소창 옆 팝업 허용 버튼을 클릭한 후 다시 시도해 주세요.");
+    return;
+  }
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  win.print();
 };
 
 export const buildStudentHistoryBasePath = (studentId: string) => `${studentId}`;

@@ -18,14 +18,36 @@
     @apply font-sans antialiased bg-paper text-ink transition-colors duration-300;
   }
 
-  .dark body {
+  .dark body,
+  .dark {
     @apply bg-[#1A202C] text-gray-100;
-    --color-paper: #1A202C;
+    --color-paper: #1E2533;
     --color-ink: #E2E8F0;
     --color-sidebar: #111827;
-    --color-accent: #A0AEC0;
+    --color-accent: #90CDF4;
     --color-highlight: #2D3748;
     --color-secondary-text: #A0AEC0;
+    --color-success-bg: #22543D;
+    --color-success-text: #9AE6B4;
+  }
+
+  /* Make semantic white surfaces respond to dark mode */
+  .dark .bg-white {
+    background-color: #252E3F;
+  }
+  .dark .border-white {
+    border-color: #2D3748;
+  }
+  /* Slightly darker surface variant for cards within cards */
+  .dark .bg-gray-50,
+  .dark .bg-gray-50\/20,
+  .dark .bg-gray-50\/30 {
+    background-color: #1E2533;
+  }
+  /* Ensure text in previously-white surfaces stays readable */
+  .dark .bg-white .text-ink,
+  .dark .bg-white .text-secondary-text {
+    color: inherit;
   }
 }
 

@@ -1,11 +1,9 @@
 import { useState, useEffect } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
-import { LogOut } from "lucide-react";
 import { cn } from "./lib/utils";
 import { supabase } from "./supabase";
 import { UserProfile } from "./lib/ai";
 import { DEFAULT_STUDENT_INSTRUCTIONS, stringifyInstructionState } from "./lib/instructions";
-import ThemeToggle from "./components/common/ThemeToggle";
 import OnboardingTutorial from "./components/common/OnboardingTutorial";
 import StudentView from "./components/student/StudentView";
 import TeacherView from "./components/teacher/TeacherView";
@@ -146,17 +144,9 @@ export default function App() {
           }}
         />
       )}
-      <div className="fixed top-4 right-10 z-[100] flex gap-2 items-center">
-        <button onClick={handleLogout} className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-gray-200 dark:border-gray-700 text-xs font-black shadow-2xl hover:bg-red-50 hover:text-red-500 transition-all flex items-center gap-2">
-          <LogOut size={14} /> 로그아웃
-        </button>
-        <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md p-1 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xl">
-          <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
-        </div>
-      </div>
       <Routes>
-        <Route path="/student/*" element={profile.role === "student" ? <StudentView session={session} profile={profile} fetchProfile={fetchProfile} handleTestLogin={async () => {}} handleLogout={handleLogout} /> : <Navigate to={profile.role === "teacher" ? "/teacher" : "/"} replace />} />
-        <Route path="/teacher/*" element={profile.role === "teacher" ? <TeacherView session={session} profile={profile} handleLogout={handleLogout} /> : <Navigate to={profile.role === "student" ? "/student" : "/"} replace />} />
+        <Route path="/student/*" element={profile.role === "student" ? <StudentView session={session} profile={profile} fetchProfile={fetchProfile} handleTestLogin={async () => {}} handleLogout={handleLogout} theme={theme} toggleTheme={toggleTheme} /> : <Navigate to={profile.role === "teacher" ? "/teacher" : "/"} replace />} />
+        <Route path="/teacher/*" element={profile.role === "teacher" ? <TeacherView session={session} profile={profile} handleLogout={handleLogout} theme={theme} toggleTheme={toggleTheme} /> : <Navigate to={profile.role === "student" ? "/student" : "/"} replace />} />
         <Route path="/" element={<Navigate to={profile.role === "teacher" ? "/teacher" : "/student"} replace />} />
       </Routes>
     </div>

@@ -39,6 +39,23 @@ const RoleSelection = ({ onSelect }: { onSelect: (role: 'student' | 'teacher') =
       alert('비밀번호가 일치하지 않습니다.');
       return;
     }
+    if (selectedRole === 'student') {
+      const g = parseInt(grade, 10);
+      const c = parseInt(classNum, 10);
+      const n = parseInt(number, 10);
+      if (!grade || !/^\d+$/.test(grade) || g < 1 || g > 12) {
+        alert('학년은 1~12 사이의 자연수로 입력해주세요.');
+        return;
+      }
+      if (!classNum || !/^\d+$/.test(classNum) || c < 1 || c > 30) {
+        alert('반은 1~30 사이의 자연수로 입력해주세요.');
+        return;
+      }
+      if (!number || !/^\d+$/.test(number) || n < 1 || n > 60) {
+        alert('번호는 1~60 사이의 자연수로 입력해주세요.');
+        return;
+      }
+    }
     setFormLoading(true);
 
     const { data, error } = await supabase.auth.signUp({
@@ -211,6 +228,8 @@ const RoleSelection = ({ onSelect }: { onSelect: (role: 'student' | 'teacher') =
                       <label className="text-[10px] font-black text-secondary-text uppercase tracking-widest ml-2">학년</label>
                       <input
                         type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         value={grade}
                         onChange={(e) => setGrade(e.target.value)}
                         className="w-full px-4 py-4 bg-paper border border-highlight rounded-2xl text-sm font-semibold text-ink text-center outline-none focus:ring-2 focus:ring-accent/20 transition-all"
@@ -222,6 +241,8 @@ const RoleSelection = ({ onSelect }: { onSelect: (role: 'student' | 'teacher') =
                       <label className="text-[10px] font-black text-secondary-text uppercase tracking-widest ml-2">반</label>
                       <input
                         type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         value={classNum}
                         onChange={(e) => setClassNum(e.target.value)}
                         className="w-full px-4 py-4 bg-paper border border-highlight rounded-2xl text-sm font-semibold text-ink text-center outline-none focus:ring-2 focus:ring-accent/20 transition-all"
@@ -233,6 +254,8 @@ const RoleSelection = ({ onSelect }: { onSelect: (role: 'student' | 'teacher') =
                       <label className="text-[10px] font-black text-secondary-text uppercase tracking-widest ml-2">번호</label>
                       <input
                         type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         value={number}
                         onChange={(e) => setNumber(e.target.value)}
                         className="w-full px-4 py-4 bg-paper border border-highlight rounded-2xl text-sm font-semibold text-ink text-center outline-none focus:ring-2 focus:ring-accent/20 transition-all"

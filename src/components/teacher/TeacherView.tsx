@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -10,6 +10,7 @@ import { supabase } from "../../supabase";
 import { UserProfile } from "../../lib/ai";
 import { isAdminUser, getClassKey, getClassLabel, isTeacherVisibleStudent } from "../../lib/userUtils";
 import SidebarItem from "../common/SidebarItem";
+import ThemeToggle from "../common/ThemeToggle";
 import TeacherDashboard from "./TeacherDashboard";
 import TeacherChat from "./TeacherChat";
 import TeacherCurriculum from "./TeacherCurriculum";
@@ -17,7 +18,7 @@ import TeacherResource from "./TeacherResource";
 import TeacherSettingsPanel from "./TeacherSettingsPanel";
 import SecureTeacherAnalysis from "../auth/SecureTeacherAnalysis";
 
-const TeacherView = ({ session, profile, handleLogout }: { session: any; profile: UserProfile | null; handleLogout: () => Promise<void> }) => {
+const TeacherView = ({ session, profile, handleLogout, theme, toggleTheme }: { session: any; profile: UserProfile | null; handleLogout: () => Promise<void>; theme: string; toggleTheme: () => void }) => {
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -27,6 +28,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any; profile
   const [teacherStudents, setTeacherStudents] = useState<UserProfile[]>([]);
   const [selectedClassKey, setSelectedClassKey] = useState("");
   const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
+  const classInitializedRef = useRef(false);
 
   const fetchTeacherStudents = async () => {
     const { data, error } = await supabase
@@ -43,15 +45,19 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any; profile
     }
     const nextStudents = ((data || []) as UserProfile[]).filter(isTeacherVisibleStudent);
     setTeacherStudents(nextStudents);
-    if (!selectedClassKey && nextStudents.length) {
+    // 최초 1회만 첫 번째 학급으로 초기화 — ref를 먼저 설정해 동시 호출 경쟁 방지
+    if (!classInitializedRef.current && nextStudents.length) {
       const firstKey = getClassKey(nextStudents[0]);
-      if (firstKey) setSelectedClassKey(firstKey);
+      if (firstKey) {
+        classInitializedRef.current = true; // set before setState to prevent double-init on concurrent calls
+        setSelectedClassKey(firstKey);
+      }
     }
   };
 
   useEffect(() => {
     fetchTeacherStudents();
-  }, [selectedClassKey]);
+  }, []);
 
   const classOptions = Array.from(new Set(teacherStudents.map((student) => getClassKey(student)).filter(Boolean))).map((key) => {
     const classStudent = teacherStudents.find((student) => getClassKey(student) === key)!;
@@ -217,7 +223,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any; profile
               ))}
             </select>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <span className="hidden sm:inline text-xs font-bold text-secondary-text">
               {(() => {
                 const now = new Date();
@@ -226,6 +232,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any; profile
                 return `현재 학기: ${year}년 ${semester}학기`;
               })()}
             </span>
+            <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
           </div>
         </header>
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
@@ -328,7 +335,7 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any; profile
             <Route path="analysis/:studentId" element={<SecureTeacherAnalysis profile={profile} selectedClassKey={selectedClassKey} />} />
             <Route path="chat" element={<div id="teacher-chat-area" className="h-full"><TeacherChat profile={profile} session={session} selectedClassKey={selectedClassKey} /></div>} />
             <Route path="class" element={<div className="p-8 font-black text-2xl text-ink uppercase">학급 관리 기능 준비 중...</div>} />
-            <Route path="curriculum" element={<TeacherCurriculum selectedClassKey={selectedClassKey} />} />
+            <Route path="curriculum" element={<TeacherCurriculum selectedClassKey={selectedClassKey} profile={profile} />} />
             <Route path="resources" element={<TeacherResource selectedClassKey={selectedClassKey} />} />
             <Route path="settings" element={<TeacherSettingsPanel profile={profile} selectedClassKey={selectedClassKey} pendingCount={pendingCount} />} />
           </Routes>

@@ -43,7 +43,8 @@ const StudentChat = ({
   const [resourceContext, setResourceContext] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const activeSessionRef = useRef<string | null>(activeSessionId);
 
   const [activeTab, setActiveTab] = useState<'chat' | 'report'>('chat');
   const [report, setReport] = useState<LearningReport | null>(null);
@@ -51,8 +52,17 @@ const StudentChat = ({
   const isReportStale = hasSessionActivitySinceReport(messages, report);
   const canGenerateReport = messages.length > 2 && (!report || isReportStale);
 
+  useEffect(() => { activeSessionRef.current = activeSessionId; }, [activeSessionId]);
+
   const focusChatInput = () => {
     window.setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const autoResizeTextarea = (el?: HTMLTextAreaElement | null) => {
+    const target = el ?? inputRef.current;
+    if (!target) return;
+    target.style.height = 'auto';
+    target.style.height = Math.min(target.scrollHeight, 120) + 'px';
   };
 
   const fetchSessions = async () => {
@@ -143,7 +153,7 @@ const StudentChat = ({
 5. 불필요한 큰따옴표로 문장을 감싸지 않습니다.
 6. 학생을 평가할 때는 단정적인 비난 대신 관찰 중심으로 씁니다.
 
-현재 학습 목표: ${instructions.currentGoals || '명시되지 않음'}
+학습 목표: 아래 대화 기록에서 학생이 이번 세션에 다룬 개념과 목표를 파악하여 활용하세요.
 교사 지침:
 ${buildTeacherPrompt(teacherContext.classSettings, teacherContext.classInstruction) || '없음'}
 ${buildTeacherPrompt(teacherContext.studentSettings, teacherContext.studentInstruction) || ''}
@@ -223,7 +233,7 @@ ${chatContext}
 3. 헤더(#), 굵게(**), 기울임(_) 같은 마크다운 서식을 쓰지 않습니다. 숫자 목록(1. 2. 3.)은 허용하며 각 항목 앞에 빈 줄을 넣어도 됩니다.
 4. 관찰 가능한 근거에 기반하여 작성하고, 추측성 단정을 피합니다.
 
-현재 학습 목표: ${instructions.currentGoals || '명시되지 않음'}
+학습 목표: 아래 대화 기록에서 학생이 이번 세션에 다룬 개념과 목표를 파악하여 활용하세요.
 교사 지침:
 ${buildTeacherPrompt(teacherContext.classSettings, teacherContext.classInstruction) || '없음'}
 ${buildTeacherPrompt(teacherContext.studentSettings, teacherContext.studentInstruction) || ''}
@@ -376,14 +386,14 @@ ${chatContext}
       fetchSessions();
     }
 
-    const arrayBuffer = await file.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i += 8192) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-    }
-    const base64 = btoa(binary);
-    const dataUrl = `data:${file.type};base64,${base64}`;
+    // Use FileReader for native base64 encoding — lower memory overhead than manual Uint8Array approach
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+    const base64 = dataUrl.split(',')[1];
 
     const userContent = isImage
       ? `![${file.name}](${dataUrl})\n\n📷 **${file.name}** 을 업로드했습니다.`
@@ -412,16 +422,22 @@ ${chatContext}
       });
       const botContent = response.text ?? 'AI가 파일을 분석하지 못했습니다. 잠시 후 다시 시도해 주세요.';
 
-      setIsTyping(true);
-      const aiMsgId = crypto.randomUUID();
-      setMessages(prev => [...prev, { id: aiMsgId, role: 'assistant', content: '', timestamp: new Date() }]);
-      let output = '';
-      for (const char of botContent) {
-        output += char;
-        setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: output } : m));
-        await new Promise(r => setTimeout(r, 15));
-      }
+      // Save to DB first (belongs to the session where the file was uploaded)
       await supabase.from('chat_messages').insert({ session_id: sid, role: 'assistant', content: botContent });
+
+      // Only stream to UI if user is still on the same session
+      if (activeSessionRef.current === sid) {
+        setIsTyping(true);
+        const aiMsgId = crypto.randomUUID();
+        setMessages(prev => [...prev, { id: aiMsgId, role: 'assistant', content: '', timestamp: new Date() }]);
+        let output = '';
+        for (const char of botContent) {
+          if (activeSessionRef.current !== sid) break; // stop streaming if session switched
+          output += char;
+          setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: output } : m));
+          await new Promise(r => setTimeout(r, 15));
+        }
+      }
     } catch (err) {
       console.error('Vision AI 호출 실패:', err);
       setMessages(prev => [...prev, {
@@ -452,7 +468,7 @@ ${chatContext}
     let sid = activeSessionId;
     if (!sid) {
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('chat_sessions')
           .insert({
             user_id: profile.id,
@@ -460,13 +476,20 @@ ${chatContext}
           })
           .select().single();
 
-        if (data) {
-          sid = data.id;
-          setActiveSessionId(sid);
-          fetchSessions();
-        }
-      } catch {}
-      if (!sid) sid = crypto.randomUUID();
+        if (error) throw error;
+        sid = data.id;
+        setActiveSessionId(sid);
+        fetchSessions();
+      } catch (err) {
+        console.error('세션 생성 실패:', err);
+        setMessages(prev => [...prev, {
+          id: crypto.randomUUID(), role: 'assistant',
+          content: '대화 세션을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+          timestamp: new Date(),
+        }]);
+        setLoading(false);
+        return; // abort: don't send without a valid session
+      }
     }
 
     const userMsg: Message = {
@@ -478,13 +501,12 @@ ${chatContext}
     setMessages(prev => [...prev, userMsg]);
 
     try {
-      await supabase.from('chat_messages')
-        .insert({
-          session_id: sid,
-          role: 'user',
-          content: currentInput
-        });
-    } catch {}
+      const { error: msgErr } = await supabase.from('chat_messages')
+        .insert({ session_id: sid, role: 'user', content: currentInput });
+      if (msgErr) console.error('사용자 메시지 저장 실패:', msgErr);
+    } catch (err) {
+      console.error('사용자 메시지 저장 실패:', err);
+    }
 
     try {
       const systemInstruction = buildStudentSystemInstruction(instructions, teacherContext, resourceContext);
@@ -503,33 +525,32 @@ ${chatContext}
       const response = await chat.sendMessage({ message: currentInput });
       const botContent = response.text ?? '답변을 받지 못했습니다. 질문을 다시 입력해 보세요.';
 
-      setLoading(false);
+      // 응답 받은 후 사용자가 다른 세션으로 이동했으면 현재 세션에만 저장하고 표시 안 함
+      const capturedSid = sid;
+      const stillOnSameSession = activeSessionRef.current === capturedSid;
+
+      // Set isTyping before loading=false so React batches them — prevents blank-indicator flash
       setIsTyping(true);
+      setLoading(false);
 
-      const aiMsgId = crypto.randomUUID();
-      const aiMsg: Message = {
-        id: aiMsgId,
-        role: 'assistant',
-        content: '',
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, aiMsg]);
-
-      let output = '';
-      for (let char of botContent) {
-        output += char;
-        setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: output } : m));
-        await new Promise(r => setTimeout(r, 15));
+      if (stillOnSameSession) {
+        const aiMsgId = crypto.randomUUID();
+        setMessages(prev => [...prev, { id: aiMsgId, role: 'assistant', content: '', timestamp: new Date() }]);
+        let output = '';
+        for (let char of botContent) {
+          output += char;
+          setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: output } : m));
+          await new Promise(r => setTimeout(r, 15));
+        }
       }
 
       try {
-        await supabase.from('chat_messages')
-          .insert({
-            session_id: sid,
-            role: 'assistant',
-            content: botContent
-          });
-      } catch {}
+        const { error: saveErr } = await supabase.from('chat_messages')
+          .insert({ session_id: capturedSid, role: 'assistant', content: botContent });
+        if (saveErr) console.error('AI 응답 저장 실패:', saveErr);
+      } catch (err) {
+        console.error('AI 응답 저장 실패:', err);
+      }
 
     } catch (err: any) {
       console.error('AI 호출 실패:', err);
@@ -543,6 +564,22 @@ ${chatContext}
     } finally {
       setIsTyping(false);
       focusChatInput();
+    }
+  };
+
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          const fakeEvent = { target: { files: [file], value: '' }, currentTarget: { value: '' } } as any;
+          await handleFileUpload({ ...fakeEvent, target: { files: [file] } } as React.ChangeEvent<HTMLInputElement>);
+        }
+        return;
+      }
     }
   };
 
@@ -781,7 +818,11 @@ ${chatContext}
                       : "bg-[#F7FAFC] text-ink border border-highlight rounded-tl-none"
                   )}>
                     <div className="markdown-body prose prose-sm dark:prose-invert max-w-none">
-                      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkMath]}
+                        rehypePlugins={[rehypeKatex]}
+                        components={{ img: ({ src, alt }) => <img src={src} alt={alt || ''} className="max-w-full rounded-xl max-h-64 mt-2 object-contain" /> }}
+                      >
                         {fixMathDelimiters(m.content)}
                       </ReactMarkdown>
                     </div>
@@ -947,13 +988,18 @@ ${chatContext}
               >
                 <Paperclip size={20} />
               </button>
-              <input
+              <textarea
                 ref={inputRef}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                placeholder="수학 개념이나 문제를 질문해보세요..."
-                className="flex-1 bg-transparent border-none outline-none text-sm py-1.5 text-ink placeholder:text-secondary-text"
+                rows={1}
+                onChange={(e) => { setInput(e.target.value); autoResizeTextarea(e.target); }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+                }}
+                onPaste={handlePaste}
+                placeholder="수학 개념이나 문제를 질문해보세요... (Shift+Enter 줄바꿈)"
+                className="flex-1 bg-transparent border-none outline-none text-sm py-1.5 text-ink placeholder:text-secondary-text resize-none leading-relaxed"
+                style={{ maxHeight: '120px', overflowY: 'auto' }}
                 disabled={loading || isTyping}
               />
               <button

@@ -117,14 +117,13 @@ export const readResourceMetadata = async (objectPath: string) => {
 };
 
 export const writeResourceMetadata = async (objectPath: string, metadata: TeacherResourceMetadata) => {
+  const path = buildResourceMetadataPath(objectPath);
   const blob = new Blob([JSON.stringify(metadata, null, 2)], { type: "application/json;charset=utf-8" });
+  const { error: removeError } = await supabase.storage.from(SUPABASE_RESOURCE_BUCKET).remove([path]);
+  if (removeError) console.warn("writeResourceMetadata: remove failed (may not exist yet):", removeError.message);
   const { error } = await supabase.storage
     .from(SUPABASE_RESOURCE_BUCKET)
-    .upload(buildResourceMetadataPath(objectPath), blob, {
-      contentType: "application/json;charset=utf-8",
-      upsert: true,
-    });
-
+    .upload(path, blob, { contentType: "application/json;charset=utf-8" });
   if (error) throw error;
 };
 
@@ -144,14 +143,13 @@ export const readResourcePages = async (objectPath: string) => {
 };
 
 export const writeResourcePages = async (objectPath: string, pages: ResourcePageText[]) => {
+  const path = buildResourcePagesPath(objectPath);
   const blob = new Blob([JSON.stringify(pages, null, 2)], { type: "application/json;charset=utf-8" });
+  const { error: removeError } = await supabase.storage.from(SUPABASE_RESOURCE_BUCKET).remove([path]);
+  if (removeError) console.warn("writeResourcePages: remove failed (may not exist yet):", removeError.message);
   const { error } = await supabase.storage
     .from(SUPABASE_RESOURCE_BUCKET)
-    .upload(buildResourcePagesPath(objectPath), blob, {
-      contentType: "application/json;charset=utf-8",
-      upsert: true,
-    });
-
+    .upload(path, blob, { contentType: "application/json;charset=utf-8" });
   if (error) throw error;
 };
 
@@ -171,13 +169,16 @@ export const loadWeeklyResourcePlans = async (classKey: string) => {
 };
 
 export const writeWeeklyResourcePlans = async (classKey: string, plans: WeeklyResourcePlan[]) => {
+  const path = buildWeeklyPlanPath(classKey || "all");
   const blob = new Blob([JSON.stringify(plans, null, 2)], { type: "application/json;charset=utf-8" });
+
+  // Delete existing file first to avoid RLS UPDATE policy requirement when upserting
+  const { error: removeError } = await supabase.storage.from(SUPABASE_RESOURCE_BUCKET).remove([path]);
+  if (removeError) console.warn("writeWeeklyResourcePlans: remove failed (may not exist yet):", removeError.message);
+
   const { error } = await supabase.storage
     .from(SUPABASE_RESOURCE_BUCKET)
-    .upload(buildWeeklyPlanPath(classKey || "all"), blob, {
-      contentType: "application/json;charset=utf-8",
-      upsert: true,
-    });
+    .upload(path, blob, { contentType: "application/json;charset=utf-8" });
 
   if (error) throw error;
 };

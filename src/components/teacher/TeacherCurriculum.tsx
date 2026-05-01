@@ -1,9 +1,17 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Settings } from "lucide-react";
 import { CurriculumUnit, readCurriculumUnits, writeCurriculumUnits } from "../../lib/curriculum";
+import { UserProfile } from "../../lib/ai";
 
-const TeacherCurriculum = ({ selectedClassKey }: { selectedClassKey: string }) => {
-  const [units, setUnits] = useState<CurriculumUnit[]>(() => readCurriculumUnits());
+const TeacherCurriculum = ({ selectedClassKey, profile }: { selectedClassKey: string; profile: UserProfile | null }) => {
+  const teacherId = profile?.id;
+  // Load units after profile resolves to avoid using shared fallback key before teacherId is known
+  const [units, setUnits] = useState<CurriculumUnit[]>([]);
+
+  useEffect(() => {
+    if (!teacherId) return; // wait until profile is available
+    setUnits(readCurriculumUnits(teacherId));
+  }, [teacherId]);
   const [title, setTitle] = useState("");
   const [goals, setGoals] = useState("");
 
@@ -16,22 +24,29 @@ const TeacherCurriculum = ({ selectedClassKey }: { selectedClassKey: string }) =
         id: crypto.randomUUID(),
         title: title.trim(),
         goals: goals.trim(),
-        active: true,
+        active: false, // New units start as "예정" — teacher manually activates
         classKey: selectedClassKey,
         createdAt: new Date().toISOString(),
       },
       ...units,
     ];
     setUnits(nextUnits);
-    writeCurriculumUnits(nextUnits);
+    writeCurriculumUnits(nextUnits, teacherId);
     setTitle("");
     setGoals("");
   };
 
   const toggleUnit = (id: string) => {
-    const nextUnits = units.map((unit) => unit.id === id ? { ...unit, active: !unit.active } : unit);
+    const target = units.find((u) => u.id === id);
+    if (!target) return;
+    const nextUnits = units.map((unit) => {
+      if (unit.id === id) return { ...unit, active: !unit.active };
+      // If activating this unit, deactivate other units in the same class (one "진행중" per class)
+      if (!target.active && unit.classKey === target.classKey && unit.active) return { ...unit, active: false };
+      return unit;
+    });
     setUnits(nextUnits);
-    writeCurriculumUnits(nextUnits);
+    writeCurriculumUnits(nextUnits, teacherId);
   };
 
   return (

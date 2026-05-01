@@ -360,7 +360,7 @@ ${chatContext}
         <div className="flex h-16 items-center justify-between border-b border-highlight px-6">
           <div className="flex h-full gap-6">
             {(["report", "chat", "history"] as const).map((tab) => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={cn("h-full border-b-2 px-1 text-[11px] font-black uppercase tracking-widest transition-all", activeTab === tab ? "border-accent text-accent" : "border-transparent text-secondary-text")}>{tab === "report" ? "보고서" : tab === "chat" ? "대화 기록" : "학습 이력"}</button>
+              <button key={tab} onClick={() => setActiveTab(tab)} className={cn("h-full border-b-2 px-1 text-[11px] font-black uppercase tracking-widest transition-all", activeTab === tab ? "border-accent text-accent" : "border-transparent text-secondary-text")}>{tab === "report" ? "보고서" : tab === "chat" ? "대화 내용" : "학습 아카이브"}</button>
             ))}
           </div>
           <button onClick={fetchStudents} className="text-xs font-black text-accent">새로고침</button>
@@ -428,11 +428,14 @@ ${chatContext}
               ))}
             </div>
           ) : archiveLoading ? (
-            <div className="flex h-full items-center justify-center text-sm font-bold text-gray-400">학습 이력을 불러오는 중입니다.</div>
+            <div className="flex h-full items-center justify-center text-sm font-bold text-gray-400">학습 아카이브를 불러오는 중입니다...</div>
           ) : (
             <div className="space-y-6">
-              <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-3 text-[10px] font-black uppercase tracking-widest text-accent">학생 아카이브</p><div className="prose prose-sm max-w-none"><ReactMarkdown>{archiveProfile}</ReactMarkdown></div></div>
-              <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-3 text-[10px] font-black uppercase tracking-widest text-accent">학습 타임라인</p><div className="prose prose-sm max-w-none"><ReactMarkdown>{archiveTimeline}</ReactMarkdown></div></div>
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs font-semibold text-blue-700">
+                AI 튜터가 자동 생성한 학생별 학습 아카이브입니다. AI 어시스턴트 탭에서 이 데이터를 근거로 질문할 수 있습니다.
+              </div>
+              <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-3 text-[10px] font-black uppercase tracking-widest text-accent">학생 프로필 요약</p><div className="prose prose-sm max-w-none"><ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{archiveProfile || "아직 아카이브가 없습니다."}</ReactMarkdown></div></div>
+              <div className="rounded-2xl border border-highlight bg-paper p-5"><p className="mb-3 text-[10px] font-black uppercase tracking-widest text-accent">학습 타임라인</p><div className="prose prose-sm max-w-none"><ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{archiveTimeline || "아직 타임라인이 없습니다."}</ReactMarkdown></div></div>
               <div className="rounded-2xl border border-highlight bg-paper p-5">
                 <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-accent">세션 문서</p>
                 {archiveSessions.length > 0 ? (
