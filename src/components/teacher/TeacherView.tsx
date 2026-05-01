@@ -214,7 +214,7 @@ const TeacherView = ({ session, profile, handleLogout, theme, toggleTheme }: { s
             >
               {isSidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
             </button>
-            <select value={selectedClassKey} onChange={(e) => setSelectedClassKey(e.target.value)} className="bg-paper border border-highlight rounded-lg px-3 py-1.5 text-xs font-bold outline-none focus:ring-1 focus:ring-accent">
+            <select value={selectedClassKey} onChange={(e) => setSelectedClassKey(e.target.value)} className="bg-paper border border-highlight rounded-xl px-5 py-2.5 text-sm font-black outline-none focus:ring-1 focus:ring-accent min-w-36">
               <option value="">전체 학급</option>
               {classOptions.map((option) => (
                 <option key={option.key} value={option.key}>

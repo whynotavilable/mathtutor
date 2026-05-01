@@ -317,8 +317,8 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
       <section className="rounded-2xl border border-highlight bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-2xl font-black uppercase tracking-tight text-ink">?? ????</h2>
-            <p className="mt-1 text-xs font-bold uppercase tracking-widest text-secondary-text opacity-70">??? ?? ??? ?? ??? ?????.</p>
+            <h2 className="text-2xl font-black uppercase tracking-tight text-ink">교사 대시보드</h2>
+            <p className="mt-1 text-xs font-bold uppercase tracking-widest text-secondary-text opacity-70">학급의 학습 흐름과 개입 신호를 확인합니다.</p>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:w-[520px]">
             <button
@@ -326,12 +326,12 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
               className="group flex cursor-pointer items-center justify-center gap-3 rounded-xl border border-highlight bg-paper px-5 py-4 text-left transition-all hover:border-accent hover:bg-white hover:shadow-md"
             >
               <BookOpen size={22} className="text-accent transition-transform group-hover:scale-110" />
-              <span className="text-xs font-black uppercase tracking-widest text-ink">?? ?? ??</span>
+              <span className="text-xs font-black uppercase tracking-widest text-ink">교사 학급 지침</span>
             </button>
             <div className="flex cursor-default items-center justify-center gap-3 rounded-xl border border-highlight bg-paper/70 px-5 py-4 opacity-80">
               <BarChart3 size={22} className="text-secondary-text" />
-              <span className="text-xs font-black uppercase tracking-widest text-ink">??? ?? ?? ??</span>
-              <span className="rounded-full bg-white px-2 py-1 text-[9px] font-black text-secondary-text">???</span>
+              <span className="text-xs font-black uppercase tracking-widest text-ink">오늘의 학습 통계 확인</span>
+              <span className="rounded-full bg-white px-2 py-1 text-[9px] font-black text-secondary-text">준비중</span>
             </div>
           </div>
         </div>
@@ -433,7 +433,10 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
         <div className="bg-white rounded-xl border border-highlight p-8 shadow-sm">
           <div className="flex justify-between items-center mb-6">
             <h3 className="font-black text-sm text-ink uppercase tracking-wide">학급 평균 성취도 추이</h3>
-            <span className="text-[10px] font-bold text-accent px-2 py-1 bg-paper rounded uppercase">월별 추이</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-accent px-2 py-1 bg-paper rounded uppercase">월별 추이</span>
+              <span className="rounded-full bg-gray-100 px-2 py-1 text-[9px] font-black text-secondary-text">준비중</span>
+            </div>
           </div>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -455,7 +458,10 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
         <div className="bg-white rounded-xl border border-highlight p-8 shadow-sm">
           <div className="flex justify-between items-center mb-6">
             <h3 className="font-black text-sm text-ink uppercase tracking-wide">단원별 이해도 분석</h3>
-            <span className="text-[10px] font-bold text-accent px-2 py-1 bg-paper rounded uppercase">단원 이해도</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-accent px-2 py-1 bg-paper rounded uppercase">단원 이해도</span>
+              <span className="rounded-full bg-gray-100 px-2 py-1 text-[9px] font-black text-secondary-text">준비중</span>
+            </div>
           </div>
           <div className="h-64 flex justify-center">
             <ResponsiveContainer width="100%" height="100%">
