@@ -268,13 +268,15 @@ ${chatContext}
   useEffect(() => {
     const loadResources = async () => {
       try {
-        const { getActiveWeeklyResourcePlans, loadTeacherResourceCards, readResourcePages } = await import("../../lib/resources");
+        const { getActiveWeeklyResourcePlans, getWeeklyPlanItems, loadTeacherResourceCards, readResourcePages } = await import("../../lib/resources");
         const cards = await loadTeacherResourceCards();
         const classKey = profile ? `${profile.grade}-${profile.class}` : "";
         const activePlans = classKey ? await getActiveWeeklyResourcePlans(classKey) : [];
         const relevant = cards.filter(c => !c.classKey || c.classKey === classKey || c.classKey === "all");
+        const activePlanItems = activePlans.flatMap(getWeeklyPlanItems);
         const plannedResources = activePlans
-          .map((plan) => relevant.find((c) => c.objectPath === plan.resourceObjectPath))
+          .flatMap((plan) => getWeeklyPlanItems(plan))
+          .map((item) => relevant.find((c) => c.objectPath === item.resourceObjectPath))
           .filter(Boolean) as typeof relevant;
         const plannedResourcePaths = new Set(plannedResources.map((resource) => resource.objectPath));
         const prioritized = plannedResources.length
@@ -287,19 +289,19 @@ ${chatContext}
               `### 계획 ${index + 1}: ${plan.resourceTitle}`,
               `적용 기간: ${plan.weekStartDate || "미지정"} ~ ${plan.weekEndDate || "미지정"}`,
               plan.lessonStart || plan.lessonEnd ? `차시 범위: ${plan.lessonStart || "?"}~${plan.lessonEnd || "?"}차시` : "",
-              `페이지 범위: ${plan.pageStart}~${plan.pageEnd}쪽`,
+              ...getWeeklyPlanItems(plan).map((item) => `자료: ${item.resourceTitle} / 페이지 범위: ${item.pageStart}~${item.pageEnd}쪽`),
               plan.note ? `교사 운영 지침: ${plan.note}` : "",
             ].filter(Boolean).join("\n")),
             "학생이 문제 추천이나 추가 연습을 요청하면 활성화된 주간 계획들의 페이지 범위를 우선 사용하고, 범위 밖 문제를 먼저 제시하지 마세요.",
           ].filter(Boolean).join("\n\n")
           : "";
-        const pageContextParts = await Promise.all(activePlans.map(async (plan) => {
-          const pageStart = Number.parseInt(plan.pageStart || "", 10);
-          const pageEnd = Number.parseInt(plan.pageEnd || "", 10);
-          if (!plan.resourceObjectPath || !Number.isFinite(pageStart) || !Number.isFinite(pageEnd)) return "";
-          const pageText = (await readResourcePages(plan.resourceObjectPath))
+        const pageContextParts = await Promise.all(activePlanItems.map(async (item) => {
+          const pageStart = Number.parseInt(item.pageStart || "", 10);
+          const pageEnd = Number.parseInt(item.pageEnd || "", 10);
+          if (!item.resourceObjectPath || !Number.isFinite(pageStart) || !Number.isFinite(pageEnd)) return "";
+          const pageText = (await readResourcePages(item.resourceObjectPath))
             .filter((page) => page.pageNumber >= Math.min(pageStart, pageEnd) && page.pageNumber <= Math.max(pageStart, pageEnd))
-            .map((page) => `### ${plan.resourceTitle} / ${page.pageNumber}쪽\n${page.text}`)
+            .map((page) => `### ${item.resourceTitle} / ${page.pageNumber}쪽\n${page.text}`)
             .join("\n\n");
           return pageText;
         }));

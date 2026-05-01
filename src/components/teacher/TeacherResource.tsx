@@ -5,10 +5,12 @@ import {
   TeacherResourceItem,
   TeacherResourceMetadata,
   WeeklyResourcePlan,
+  WeeklyResourcePlanItem,
   SUPABASE_RESOURCE_BUCKET,
   buildResourceObjectPath,
   buildResourceMetadataPath,
   buildResourcePagesPath,
+  getWeeklyPlanItems,
   loadTeacherResourceCards,
   loadWeeklyResourcePlans,
   writeResourceMetadata,
@@ -49,6 +51,8 @@ const defaultWeekRange = () => {
 
 const isPdfFile = (file: File) => file.type.includes("pdf") || file.name.toLowerCase().endsWith(".pdf");
 
+type PlanResourceDraft = WeeklyResourcePlanItem;
+
 const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => {
   const [resources, setResources] = useState<TeacherResourceItem[]>([]);
   const [weeklyPlans, setWeeklyPlans] = useState<WeeklyResourcePlan[]>([]);
@@ -64,7 +68,8 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
   const [resourceDraft, setResourceDraft] = useState<ResourceDraft>(emptyResourceDraft);
   const weekRange = defaultWeekRange();
   const [planDraft, setPlanDraft] = useState({
-    resourceObjectPath: "",
+    selectedResourceObjectPath: "",
+    resourceItems: [] as PlanResourceDraft[],
     weekStartDate: weekRange.start,
     weekEndDate: weekRange.end,
     lessonStart: "",
@@ -293,36 +298,78 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
     }
   };
 
-  const saveWeeklyPlan = async () => {
-    const selectedResource = resources.find((item) => item.objectPath === planDraft.resourceObjectPath);
-    if (!selectedResource?.objectPath) {
-      alert("이번 주에 사용할 자료를 선택해 주세요.");
+  const addPlanResource = () => {
+    const selectedResource = resources.find((item) => item.objectPath === planDraft.selectedResourceObjectPath);
+    if (!selectedResource?.objectPath) return;
+    if (planDraft.resourceItems.some((item) => item.resourceObjectPath === selectedResource.objectPath)) {
+      alert("이미 추가된 자료입니다.");
       return;
     }
-    if (!planDraft.pageStart.trim() || !planDraft.pageEnd.trim()) {
-      alert("페이지 범위를 입력해 주세요.");
+
+    setPlanDraft((prev) => ({
+      ...prev,
+      selectedResourceObjectPath: "",
+      resourceItems: [
+        ...prev.resourceItems,
+        {
+          resourceObjectPath: selectedResource.objectPath!,
+          resourceTitle: selectedResource.name,
+          pageStart: prev.pageStart,
+          pageEnd: prev.pageEnd,
+        },
+      ],
+    }));
+  };
+
+  const updatePlanResource = (resourceObjectPath: string, updates: Partial<PlanResourceDraft>) => {
+    setPlanDraft((prev) => ({
+      ...prev,
+      resourceItems: prev.resourceItems.map((item) =>
+        item.resourceObjectPath === resourceObjectPath ? { ...item, ...updates } : item,
+      ),
+    }));
+  };
+
+  const removePlanResource = (resourceObjectPath: string) => {
+    setPlanDraft((prev) => ({
+      ...prev,
+      resourceItems: prev.resourceItems.filter((item) => item.resourceObjectPath !== resourceObjectPath),
+    }));
+  };
+
+  const saveWeeklyPlan = async () => {
+    if (planDraft.resourceItems.length === 0) {
+      alert("이번 주에 사용할 자료를 하나 이상 추가해 주세요.");
+      return;
+    }
+    if (planDraft.resourceItems.some((item) => !item.pageStart.trim() || !item.pageEnd.trim())) {
+      alert("추가한 모든 자료의 페이지 범위를 입력해 주세요.");
       return;
     }
 
     try {
       setSavingPlan(true);
       setStorageError("");
+      const primaryResource = planDraft.resourceItems[0];
       const nextPlan: WeeklyResourcePlan = {
         id: crypto.randomUUID(),
         classKey: currentClassKey,
-        resourceObjectPath: selectedResource.objectPath,
-        resourceTitle: selectedResource.name,
+        resourceObjectPath: primaryResource.resourceObjectPath,
+        resourceTitle: planDraft.resourceItems.length > 1
+          ? `${primaryResource.resourceTitle} 외 ${planDraft.resourceItems.length - 1}개`
+          : primaryResource.resourceTitle,
+        resourceItems: planDraft.resourceItems,
         weekStartDate: planDraft.weekStartDate,
         weekEndDate: planDraft.weekEndDate,
         lessonStart: planDraft.lessonStart.trim(),
         lessonEnd: planDraft.lessonEnd.trim(),
-        pageStart: planDraft.pageStart.trim(),
-        pageEnd: planDraft.pageEnd.trim(),
+        pageStart: primaryResource.pageStart.trim(),
+        pageEnd: primaryResource.pageEnd.trim(),
         note: planDraft.note.trim(),
         active: true,
         updatedAt: new Date().toISOString(),
       };
-      const nextPlans = [nextPlan, ...weeklyPlans].filter((plan) => plan.classKey === currentClassKey);
+      const nextPlans = [nextPlan, ...weeklyPlans.map((plan) => ({ ...plan, active: false }))].filter((plan) => plan.classKey === currentClassKey);
       await writeWeeklyResourcePlans(currentClassKey, nextPlans);
       setWeeklyPlans(nextPlans);
       alert("이번 주 자료 계획을 저장했습니다.");
@@ -337,7 +384,9 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
 
   const activateWeeklyPlan = async (planId: string) => {
     const nextPlans = weeklyPlans.map((plan) => (
-      plan.id === planId ? { ...plan, active: !plan.active, updatedAt: new Date().toISOString() } : plan
+      plan.id === planId
+        ? { ...plan, active: !plan.active, updatedAt: new Date().toISOString() }
+        : { ...plan, active: false }
     ));
     await writeWeeklyResourcePlans(currentClassKey, nextPlans);
     setWeeklyPlans(nextPlans);
@@ -448,12 +497,49 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
               </div>
             </div>
             <div className="mt-5 space-y-3">
-              <select value={planDraft.resourceObjectPath} onChange={(e) => setPlanDraft((prev) => ({ ...prev, resourceObjectPath: e.target.value }))} className="w-full rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none">
-                <option value="">이번 주에 사용할 자료 선택</option>
-                {filteredResources.map((item) => (
-                  <option key={item.objectPath} value={item.objectPath}>{item.name}</option>
-                ))}
-              </select>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <select value={planDraft.selectedResourceObjectPath} onChange={(e) => setPlanDraft((prev) => ({ ...prev, selectedResourceObjectPath: e.target.value }))} className="min-w-0 flex-1 rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none">
+                  <option value="">이번 주에 사용할 자료 선택</option>
+                  {filteredResources.map((item) => (
+                    <option key={item.objectPath} value={item.objectPath}>{item.name}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={addPlanResource}
+                  disabled={!planDraft.selectedResourceObjectPath}
+                  className="cursor-pointer rounded-xl border border-highlight px-4 py-3 text-xs font-black text-accent transition-all hover:border-accent disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  자료 추가
+                </button>
+              </div>
+              {planDraft.resourceItems.length > 0 && (
+                <div className="space-y-2 rounded-xl border border-highlight bg-paper p-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-secondary-text">선택 자료와 페이지 범위</p>
+                  {planDraft.resourceItems.map((item) => (
+                    <div key={item.resourceObjectPath} className="grid grid-cols-1 gap-2 rounded-xl bg-white p-3 sm:grid-cols-[minmax(0,1fr)_90px_90px_auto] sm:items-center">
+                      <p className="min-w-0 truncate text-xs font-black text-ink">{item.resourceTitle}</p>
+                      <input
+                        value={item.pageStart}
+                        onChange={(e) => updatePlanResource(item.resourceObjectPath, { pageStart: e.target.value })}
+                        placeholder="시작 쪽"
+                        className="rounded-lg border border-highlight bg-paper px-3 py-2 text-xs font-semibold outline-none"
+                      />
+                      <input
+                        value={item.pageEnd}
+                        onChange={(e) => updatePlanResource(item.resourceObjectPath, { pageEnd: e.target.value })}
+                        placeholder="끝 쪽"
+                        className="rounded-lg border border-highlight bg-paper px-3 py-2 text-xs font-semibold outline-none"
+                      />
+                      <button
+                        onClick={() => removePlanResource(item.resourceObjectPath)}
+                        className="cursor-pointer rounded-lg border border-highlight px-3 py-2 text-xs font-black text-red-500 hover:bg-red-50"
+                      >
+                        제거
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <input type="date" value={planDraft.weekStartDate} onChange={(e) => setPlanDraft((prev) => ({ ...prev, weekStartDate: e.target.value }))} className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
                 <input type="date" value={planDraft.weekEndDate} onChange={(e) => setPlanDraft((prev) => ({ ...prev, weekEndDate: e.target.value }))} className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
@@ -461,10 +547,6 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
               <div className="grid grid-cols-2 gap-3">
                 <input value={planDraft.lessonStart} onChange={(e) => setPlanDraft((prev) => ({ ...prev, lessonStart: e.target.value }))} placeholder="시작 차시 예: 3" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
                 <input value={planDraft.lessonEnd} onChange={(e) => setPlanDraft((prev) => ({ ...prev, lessonEnd: e.target.value }))} placeholder="끝 차시 예: 7" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <input value={planDraft.pageStart} onChange={(e) => setPlanDraft((prev) => ({ ...prev, pageStart: e.target.value }))} placeholder="시작 쪽 예: 5" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
-                <input value={planDraft.pageEnd} onChange={(e) => setPlanDraft((prev) => ({ ...prev, pageEnd: e.target.value }))} placeholder="끝 쪽 예: 20" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
               </div>
               <textarea value={planDraft.note} onChange={(e) => setPlanDraft((prev) => ({ ...prev, note: e.target.value }))} placeholder="이번 주 운영 지침" className="h-24 w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none resize-none" />
               <button onClick={saveWeeklyPlan} disabled={savingPlan} className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-sidebar px-5 py-3 text-xs font-black uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:opacity-50">
@@ -499,25 +581,35 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
 
       <div className="grid gap-4">
         <h3 className="text-lg font-black text-ink">활성 주간 계획</h3>
-        {classPlans.map((plan) => (
-          <div key={plan.id} className="rounded-xl border border-highlight bg-white p-5">
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div>
-                <p className="text-sm font-black text-ink">{plan.resourceTitle}</p>
-                <p className="mt-1 text-xs font-bold text-secondary-text">
-                  {plan.weekStartDate} ~ {plan.weekEndDate} / {plan.lessonStart || "?"}~{plan.lessonEnd || "?"}차시 / {plan.pageStart}~{plan.pageEnd}쪽
-                </p>
-                {plan.note && <p className="mt-3 rounded-xl bg-paper px-4 py-3 text-sm font-semibold text-ink">{plan.note}</p>}
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => activateWeeklyPlan(plan.id)} className={`cursor-pointer px-4 py-2 rounded-xl border text-xs font-black ${plan.active ? "border-accent bg-accent text-white" : "border-highlight text-accent hover:border-accent"}`}>
-                  {plan.active ? "활성 해제" : "활성화"}
-                </button>
-                <button onClick={() => removeWeeklyPlan(plan.id)} className="cursor-pointer px-4 py-2 rounded-xl border border-highlight text-xs font-black text-red-500 hover:bg-red-50">삭제</button>
+        {classPlans.map((plan) => {
+          const planItems = getWeeklyPlanItems(plan);
+          return (
+            <div key={plan.id} className="rounded-xl border border-highlight bg-white p-5">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-sm font-black text-ink">{plan.resourceTitle}</p>
+                  <p className="mt-1 text-xs font-bold text-secondary-text">
+                    {plan.weekStartDate} ~ {plan.weekEndDate} / {plan.lessonStart || "?"}~{plan.lessonEnd || "?"}차시
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {planItems.map((item) => (
+                      <div key={item.resourceObjectPath} className="rounded-xl bg-paper px-4 py-2 text-xs font-bold text-ink">
+                        {item.resourceTitle} / {item.pageStart}~{item.pageEnd}쪽
+                      </div>
+                    ))}
+                  </div>
+                  {plan.note && <p className="mt-3 rounded-xl bg-paper px-4 py-3 text-sm font-semibold text-ink">{plan.note}</p>}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => activateWeeklyPlan(plan.id)} className={`cursor-pointer px-4 py-2 rounded-xl border text-xs font-black ${plan.active ? "border-accent bg-accent text-white" : "border-highlight text-accent hover:border-accent"}`}>
+                    {plan.active ? "활성 해제" : "활성화"}
+                  </button>
+                  <button onClick={() => removeWeeklyPlan(plan.id)} className="cursor-pointer px-4 py-2 rounded-xl border border-highlight text-xs font-black text-red-500 hover:bg-red-50">삭제</button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {classPlans.length === 0 && <div className="bg-white rounded-xl border border-highlight p-8 text-center text-sm font-bold text-gray-400">저장된 주간 계획이 없습니다.</div>}
       </div>
 

@@ -36,11 +36,19 @@ export interface TeacherResourceMetadata {
   uploadedBy?: string;
 }
 
+export interface WeeklyResourcePlanItem {
+  resourceObjectPath: string;
+  resourceTitle: string;
+  pageStart: string;
+  pageEnd: string;
+}
+
 export interface WeeklyResourcePlan {
   id: string;
   classKey: string;
   resourceObjectPath: string;
   resourceTitle: string;
+  resourceItems?: WeeklyResourcePlanItem[];
   weekStartDate: string;
   weekEndDate: string;
   lessonStart: string;
@@ -87,6 +95,20 @@ export const buildResourcePagesPath = (objectPath: string) => `${objectPath}${RE
 export const isResourceMetadataPath = (path: string) => path.endsWith(RESOURCE_METADATA_SUFFIX);
 export const isResourcePagesPath = (path: string) => path.endsWith(RESOURCE_PAGES_SUFFIX);
 export const buildWeeklyPlanPath = (classKey: string) => `${WEEKLY_PLAN_PREFIX}/${safePathPart(classKey)}.json`;
+
+export const getWeeklyPlanItems = (plan: WeeklyResourcePlan): WeeklyResourcePlanItem[] => {
+  if (Array.isArray(plan.resourceItems) && plan.resourceItems.length > 0) {
+    return plan.resourceItems;
+  }
+
+  if (!plan.resourceObjectPath) return [];
+  return [{
+    resourceObjectPath: plan.resourceObjectPath,
+    resourceTitle: plan.resourceTitle,
+    pageStart: plan.pageStart,
+    pageEnd: plan.pageEnd,
+  }];
+};
 
 export const parseResourceObjectPath = (path: string) => {
   if (isResourceMetadataPath(path) || isResourcePagesPath(path)) return null;
