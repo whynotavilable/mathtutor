@@ -322,8 +322,7 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
         active: true,
         updatedAt: new Date().toISOString(),
       };
-      const inactivePlans = weeklyPlans.map((plan) => ({ ...plan, active: false }));
-      const nextPlans = [nextPlan, ...inactivePlans].filter((plan) => plan.classKey === currentClassKey);
+      const nextPlans = [nextPlan, ...weeklyPlans].filter((plan) => plan.classKey === currentClassKey);
       await writeWeeklyResourcePlans(currentClassKey, nextPlans);
       setWeeklyPlans(nextPlans);
       alert("이번 주 자료 계획을 저장했습니다.");
@@ -337,7 +336,9 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
   };
 
   const activateWeeklyPlan = async (planId: string) => {
-    const nextPlans = weeklyPlans.map((plan) => ({ ...plan, active: plan.id === planId }));
+    const nextPlans = weeklyPlans.map((plan) => (
+      plan.id === planId ? { ...plan, active: !plan.active, updatedAt: new Date().toISOString() } : plan
+    ));
     await writeWeeklyResourcePlans(currentClassKey, nextPlans);
     setWeeklyPlans(nextPlans);
   };
@@ -370,7 +371,7 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
               </p>
             </div>
             {editingObjectPath && (
-              <button onClick={resetDraft} className="rounded-xl border border-highlight p-2 text-secondary-text hover:text-accent">
+              <button onClick={resetDraft} className="cursor-pointer rounded-xl border border-highlight p-2 text-secondary-text hover:text-accent">
                 <X size={16} />
               </button>
             )}
@@ -431,7 +432,7 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
               <Save size={16} />
               {uploading ? "저장 중..." : editingObjectPath ? "자료 정보 저장" : "파일과 정보 저장"}
             </button>
-            <button onClick={resetDraft} className="rounded-xl border border-highlight px-5 py-3 text-xs font-black uppercase tracking-widest text-secondary-text">
+            <button onClick={resetDraft} className="cursor-pointer rounded-xl border border-highlight px-5 py-3 text-xs font-black uppercase tracking-widest text-secondary-text">
               초기화
             </button>
           </div>
@@ -466,7 +467,7 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
                 <input value={planDraft.pageEnd} onChange={(e) => setPlanDraft((prev) => ({ ...prev, pageEnd: e.target.value }))} placeholder="끝 쪽 예: 20" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
               </div>
               <textarea value={planDraft.note} onChange={(e) => setPlanDraft((prev) => ({ ...prev, note: e.target.value }))} placeholder="이번 주 운영 지침" className="h-24 w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none resize-none" />
-              <button onClick={saveWeeklyPlan} disabled={savingPlan} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sidebar px-5 py-3 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50">
+              <button onClick={saveWeeklyPlan} disabled={savingPlan} className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-sidebar px-5 py-3 text-xs font-black uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:opacity-50">
                 <Save size={16} />
                 {savingPlan ? "저장 중..." : "주간 계획 저장"}
               </button>
@@ -488,7 +489,7 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
           <p className="text-xs font-black tracking-widest text-secondary-text uppercase">저장 위치</p>
           <p className="text-sm font-bold text-ink">Supabase Storage / {SUPABASE_RESOURCE_BUCKET}</p>
         </div>
-        <button onClick={fetchResources} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-highlight text-xs font-black text-accent">
+        <button onClick={fetchResources} className="inline-flex cursor-pointer items-center gap-2 px-4 py-2 rounded-xl border border-highlight text-xs font-black text-accent">
           <RefreshCcw size={14} />
           새로고침
         </button>
@@ -509,10 +510,10 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
                 {plan.note && <p className="mt-3 rounded-xl bg-paper px-4 py-3 text-sm font-semibold text-ink">{plan.note}</p>}
               </div>
               <div className="flex gap-2">
-                <button onClick={() => activateWeeklyPlan(plan.id)} className={`px-4 py-2 rounded-xl border text-xs font-black ${plan.active ? "border-accent bg-accent text-white" : "border-highlight text-accent"}`}>
-                  {plan.active ? "활성" : "활성화"}
+                <button onClick={() => activateWeeklyPlan(plan.id)} className={`cursor-pointer px-4 py-2 rounded-xl border text-xs font-black ${plan.active ? "border-accent bg-accent text-white" : "border-highlight text-accent hover:border-accent"}`}>
+                  {plan.active ? "활성 해제" : "활성화"}
                 </button>
-                <button onClick={() => removeWeeklyPlan(plan.id)} className="px-4 py-2 rounded-xl border border-highlight text-xs font-black text-red-500">삭제</button>
+                <button onClick={() => removeWeeklyPlan(plan.id)} className="cursor-pointer px-4 py-2 rounded-xl border border-highlight text-xs font-black text-red-500 hover:bg-red-50">삭제</button>
               </div>
             </div>
           </div>
@@ -533,18 +534,18 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button onClick={() => startEditResource(item)} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-highlight text-xs font-black text-accent"><Edit3 size={14} />정보 수정</button>
+                <button onClick={() => startEditResource(item)} className="inline-flex cursor-pointer items-center gap-2 px-4 py-2 rounded-xl border border-highlight text-xs font-black text-accent"><Edit3 size={14} />정보 수정</button>
                 {item.category === "resource" && (
                   <button
                     onClick={() => reprocessResourcePages(item)}
                     disabled={processingObjectPath === item.objectPath}
-                    className="px-4 py-2 rounded-xl border border-highlight text-xs font-black text-accent disabled:opacity-50"
+                    className="cursor-pointer px-4 py-2 rounded-xl border border-highlight text-xs font-black text-accent disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {processingObjectPath === item.objectPath ? "처리 중..." : "PDF 텍스트 재처리"}
                   </button>
                 )}
-                <button onClick={() => downloadResource(item)} className="px-4 py-2 rounded-xl border border-highlight text-xs font-black text-accent">다운로드</button>
-                <button onClick={() => removeResource(item)} className="px-4 py-2 rounded-xl border border-highlight text-xs font-black text-red-500">삭제</button>
+                <button onClick={() => downloadResource(item)} className="cursor-pointer px-4 py-2 rounded-xl border border-highlight text-xs font-black text-accent">다운로드</button>
+                <button onClick={() => removeResource(item)} className="cursor-pointer px-4 py-2 rounded-xl border border-highlight text-xs font-black text-red-500 hover:bg-red-50">삭제</button>
               </div>
             </div>
             <div className="grid gap-3 md:grid-cols-2">

@@ -184,12 +184,17 @@ export const writeWeeklyResourcePlans = async (classKey: string, plans: WeeklyRe
 };
 
 export const getActiveWeeklyResourcePlan = async (classKey: string, date = new Date()) => {
+  const activePlans = await getActiveWeeklyResourcePlans(classKey, date);
+  return activePlans[0] || null;
+};
+
+export const getActiveWeeklyResourcePlans = async (classKey: string, date = new Date()) => {
   const plans = await loadWeeklyResourcePlans(classKey);
   const today = date.toISOString().slice(0, 10);
   return plans
     .filter((plan) => plan.active)
     .filter((plan) => (!plan.weekStartDate || plan.weekStartDate <= today) && (!plan.weekEndDate || today <= plan.weekEndDate))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] || null;
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 };
 
 export const loadTeacherResourceCards = async () => {

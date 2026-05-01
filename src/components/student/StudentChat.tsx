@@ -268,37 +268,42 @@ ${chatContext}
   useEffect(() => {
     const loadResources = async () => {
       try {
-        const { getActiveWeeklyResourcePlan, loadTeacherResourceCards, readResourcePages } = await import("../../lib/resources");
+        const { getActiveWeeklyResourcePlans, loadTeacherResourceCards, readResourcePages } = await import("../../lib/resources");
         const cards = await loadTeacherResourceCards();
         const classKey = profile ? `${profile.grade}-${profile.class}` : "";
-        const activePlan = classKey ? await getActiveWeeklyResourcePlan(classKey) : null;
+        const activePlans = classKey ? await getActiveWeeklyResourcePlans(classKey) : [];
         const relevant = cards.filter(c => !c.classKey || c.classKey === classKey || c.classKey === "all");
-        const plannedResource = activePlan
-          ? relevant.find((c) => c.objectPath === activePlan.resourceObjectPath)
-          : null;
-        const prioritized = plannedResource
-          ? [plannedResource, ...relevant.filter((c) => c.objectPath !== plannedResource.objectPath)]
+        const plannedResources = activePlans
+          .map((plan) => relevant.find((c) => c.objectPath === plan.resourceObjectPath))
+          .filter(Boolean) as typeof relevant;
+        const plannedResourcePaths = new Set(plannedResources.map((resource) => resource.objectPath));
+        const prioritized = plannedResources.length
+          ? [...plannedResources, ...relevant.filter((c) => !plannedResourcePaths.has(c.objectPath))]
           : relevant;
-        const planContext = activePlan
+        const planContext = activePlans.length
           ? [
             "## 이번 주 학습 계획",
-            `사용 자료: ${activePlan.resourceTitle}`,
-            `적용 기간: ${activePlan.weekStartDate || "미지정"} ~ ${activePlan.weekEndDate || "미지정"}`,
-            activePlan.lessonStart || activePlan.lessonEnd ? `차시 범위: ${activePlan.lessonStart || "?"}~${activePlan.lessonEnd || "?"}차시` : "",
-            `페이지 범위: ${activePlan.pageStart}~${activePlan.pageEnd}쪽`,
-            activePlan.note ? `교사 운영 지침: ${activePlan.note}` : "",
-            "학생이 문제 추천이나 추가 연습을 요청하면 이 페이지 범위를 우선 사용하고, 범위 밖 문제를 먼저 제시하지 마세요.",
-          ].filter(Boolean).join("\n")
+            ...activePlans.map((plan, index) => [
+              `### 계획 ${index + 1}: ${plan.resourceTitle}`,
+              `적용 기간: ${plan.weekStartDate || "미지정"} ~ ${plan.weekEndDate || "미지정"}`,
+              plan.lessonStart || plan.lessonEnd ? `차시 범위: ${plan.lessonStart || "?"}~${plan.lessonEnd || "?"}차시` : "",
+              `페이지 범위: ${plan.pageStart}~${plan.pageEnd}쪽`,
+              plan.note ? `교사 운영 지침: ${plan.note}` : "",
+            ].filter(Boolean).join("\n")),
+            "학생이 문제 추천이나 추가 연습을 요청하면 활성화된 주간 계획들의 페이지 범위를 우선 사용하고, 범위 밖 문제를 먼저 제시하지 마세요.",
+          ].filter(Boolean).join("\n\n")
           : "";
-        const pageStart = Number.parseInt(activePlan?.pageStart || "", 10);
-        const pageEnd = Number.parseInt(activePlan?.pageEnd || "", 10);
-        const pageContext = activePlan?.resourceObjectPath && Number.isFinite(pageStart) && Number.isFinite(pageEnd)
-          ? (await readResourcePages(activePlan.resourceObjectPath))
+        const pageContextParts = await Promise.all(activePlans.map(async (plan) => {
+          const pageStart = Number.parseInt(plan.pageStart || "", 10);
+          const pageEnd = Number.parseInt(plan.pageEnd || "", 10);
+          if (!plan.resourceObjectPath || !Number.isFinite(pageStart) || !Number.isFinite(pageEnd)) return "";
+          const pageText = (await readResourcePages(plan.resourceObjectPath))
             .filter((page) => page.pageNumber >= Math.min(pageStart, pageEnd) && page.pageNumber <= Math.max(pageStart, pageEnd))
-            .map((page) => `### ${page.pageNumber}쪽\n${page.text}`)
-            .join("\n\n")
-            .slice(0, 18000)
-          : "";
+            .map((page) => `### ${plan.resourceTitle} / ${page.pageNumber}쪽\n${page.text}`)
+            .join("\n\n");
+          return pageText;
+        }));
+        const pageContext = pageContextParts.filter(Boolean).join("\n\n").slice(0, 18000);
         const selectedPageContext = pageContext ? `## 이번 주 지정 페이지 원문 추출\n${pageContext}` : "";
         if (prioritized.length === 0 && !planContext) return;
         const ctx = prioritized.map(c =>
