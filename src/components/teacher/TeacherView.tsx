@@ -102,31 +102,28 @@ const TeacherView = ({ session, profile, handleLogout }: { session: any; profile
 
     setDeletingAccountId(request.id);
     try {
-      const { data: sessions, error: sessionError } = await supabase
-        .from("chat_sessions")
-        .select("id")
-        .eq("user_id", request.id);
-      if (sessionError) throw sessionError;
-
-      const sessionIds = (sessions || []).map((sessionItem) => sessionItem.id);
-      if (sessionIds.length > 0) {
-        const { error: messageError } = await supabase.from("chat_messages").delete().in("session_id", sessionIds);
-        if (messageError) throw messageError;
-
-        const { error: reportError } = await supabase.from("reports").delete().in("session_id", sessionIds);
-        if (reportError) throw reportError;
-
-        const { error: chatSessionError } = await supabase.from("chat_sessions").delete().in("id", sessionIds);
-        if (chatSessionError) throw chatSessionError;
+      if (!session?.access_token) {
+        throw new Error("관리자 로그인 세션을 확인할 수 없습니다. 다시 로그인해 주세요.");
       }
 
-      const { error: userError } = await supabase.from("users").delete().eq("id", request.id);
-      if (userError) throw userError;
+      const response = await fetch("/api/admin-delete-account", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ accountId: request.id }),
+      });
+
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.error || "계정 삭제 요청에 실패했습니다.");
+      }
 
       await Promise.all([fetchRequests(), fetchTeacherStudents()]);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error deleting account:", err);
-      alert("계정 삭제에 실패했습니다. 권한 또는 연결된 데이터 정책을 확인해 주세요.");
+      alert(err?.message || "계정 삭제에 실패했습니다.");
     } finally {
       setDeletingAccountId(null);
     }
