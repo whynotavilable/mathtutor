@@ -313,38 +313,29 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
   };
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center min-h-[400px]">
-      <div className="text-center space-y-4">
-        <h2 className="text-4xl font-black text-ink uppercase tracking-tighter">교사 대시보드</h2>
-        <p className="text-sm text-secondary-text font-bold uppercase tracking-widest opacity-60">우리 학급의 학습을 실시간으로 관리하세요.</p>
-
-        <div className="pt-10 grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto px-4">
-          {[
-            { label: "교사 학급 지침", icon: BookOpen, action: () => setShowClassInstructions(true), ready: true },
-            { label: "오늘의 학습 통계 확인", icon: BarChart3, action: undefined, ready: false }
-          ].map((btn, idx) => (
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-8">
+      <section className="rounded-2xl border border-highlight bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-2xl font-black uppercase tracking-tight text-ink">?? ????</h2>
+            <p className="mt-1 text-xs font-bold uppercase tracking-widest text-secondary-text opacity-70">??? ?? ??? ?? ??? ?????.</p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:w-[520px]">
             <button
-              key={idx}
-              onClick={btn.action}
-              disabled={!btn.ready}
-              className={cn(
-                "flex items-center justify-center gap-3 bg-white border border-highlight p-6 rounded-3xl transition-all group",
-                btn.ready
-                  ? "cursor-pointer hover:border-accent hover:shadow-xl"
-                  : "cursor-default opacity-80"
-              )}
+              onClick={() => setShowClassInstructions(true)}
+              className="group flex cursor-pointer items-center justify-center gap-3 rounded-xl border border-highlight bg-paper px-5 py-4 text-left transition-all hover:border-accent hover:bg-white hover:shadow-md"
             >
-              <btn.icon size={24} className={cn("text-accent transition-transform", btn.ready && "group-hover:scale-110")} />
-              <span className="font-black text-xs uppercase tracking-widest text-ink">{btn.label}</span>
-              {!btn.ready && (
-                <span className="rounded-full bg-paper px-2 py-1 text-[9px] font-black text-secondary-text">
-                  준비중
-                </span>
-              )}
+              <BookOpen size={22} className="text-accent transition-transform group-hover:scale-110" />
+              <span className="text-xs font-black uppercase tracking-widest text-ink">?? ?? ??</span>
             </button>
-          ))}
+            <div className="flex cursor-default items-center justify-center gap-3 rounded-xl border border-highlight bg-paper/70 px-5 py-4 opacity-80">
+              <BarChart3 size={22} className="text-secondary-text" />
+              <span className="text-xs font-black uppercase tracking-widest text-ink">??? ?? ?? ??</span>
+              <span className="rounded-full bg-white px-2 py-1 text-[9px] font-black text-secondary-text">???</span>
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
 
       <AnimatePresence>
         {showClassInstructions && (
