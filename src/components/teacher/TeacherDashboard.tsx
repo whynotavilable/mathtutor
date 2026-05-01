@@ -111,7 +111,7 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
         if (reportsError) throw reportsError;
 
         const { data: messages, error: messagesError } = sessionIds.length
-          ? await supabase.from("chat_messages").select("session_id, role").in("session_id", sessionIds)
+          ? await supabase.from("chat_messages").select("session_id, role, content, created_at").in("session_id", sessionIds).order("created_at", { ascending: true })
           : { data: [], error: null } as any;
 
         if (messagesError) throw messagesError;
@@ -137,10 +137,15 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
         });
         setLatestReportByStudent(reportByStudent);
 
-        const messageStatsBySession = (messages || []).reduce((acc: Record<string, { user: number; total: number }>, message: any) => {
-          if (!acc[message.session_id]) acc[message.session_id] = { user: 0, total: 0 };
+        const messageStatsBySession = (messages || []).reduce((acc: Record<string, { user: number; total: number; userTexts: string[] }>, message: any) => {
+          if (!acc[message.session_id]) acc[message.session_id] = { user: 0, total: 0, userTexts: [] };
           acc[message.session_id].total += 1;
-          if (message.role === "user") acc[message.session_id].user += 1;
+          if (message.role === "user") {
+            acc[message.session_id].user += 1;
+            if (typeof message.content === "string" && message.content.trim()) {
+              acc[message.session_id].userTexts.push(message.content.trim());
+            }
+          }
           return acc;
         }, {});
 
@@ -153,6 +158,7 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
             latestSessionAt: latestSession?.created_at,
             userMessageCount: messageStats?.user || 0,
             totalMessageCount: messageStats?.total || 0,
+            recentUserText: (messageStats?.userTexts || []).slice(-8).join("\n").slice(0, 2000),
             hasLearningGoal: Boolean((studentSettings.currentGoals || "").trim()),
             hasCareerInterest: Boolean((studentSettings.careerInterest || "").trim()),
           };

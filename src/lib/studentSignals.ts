@@ -13,6 +13,7 @@ export type StudentSignalEvidence = {
   totalMessageCount?: number;
   hasLearningGoal?: boolean;
   hasCareerInterest?: boolean;
+  recentUserText?: string;
 };
 
 const POSITIVE_PATTERNS = [
@@ -70,6 +71,34 @@ const SEVERE_PATTERNS = [
   /풀이.*시도.*없/,
 ];
 
+const ENGAGEMENT_SEVERE_PATTERNS = [
+  /하기\s*싫/,
+  /공부.*싫/,
+  /수학.*싫/,
+  /재미\s*없/,
+  /흥미\s*없/,
+  /관심\s*없/,
+  /의욕\s*없/,
+  /못\s*하겠/,
+  /안\s*할래/,
+  /포기/,
+  /그만/,
+  /짜증/,
+  /싫어/,
+];
+
+const ENGAGEMENT_MODERATE_PATTERNS = [
+  /어려워/,
+  /어렵다/,
+  /모르겠/,
+  /헷갈/,
+  /귀찮/,
+  /힘들/,
+  /막막/,
+  /별로/,
+  /재미\s*없을\s*것/,
+];
+
 const countMatches = (text: string, patterns: RegExp[]) =>
   patterns.reduce((count, pattern) => count + (pattern.test(text) ? 1 : 0), 0);
 
@@ -103,6 +132,15 @@ const reportRiskScore = (report: ReportLike) => {
   return score;
 };
 
+const engagementRisk = (text?: string) => {
+  const normalized = normalize(text);
+  if (!normalized) return { severe: 0, moderate: 0 };
+  return {
+    severe: countMatches(normalized, ENGAGEMENT_SEVERE_PATTERNS),
+    moderate: countMatches(normalized, ENGAGEMENT_MODERATE_PATTERNS),
+  };
+};
+
 export const getStudentSignal = (
   report: ReportLike | null | undefined,
   hasSession: boolean,
@@ -113,9 +151,18 @@ export const getStudentSignal = (
   const hasLatestSessionAt = Boolean(evidence.latestSessionAt);
   const hasUserMessageCount = typeof evidence.userMessageCount === "number";
   const userMessageCount = evidence.userMessageCount ?? 0;
+  const engagement = engagementRisk(evidence.recentUserText);
 
   if (!hasSession) {
     return "red";
+  }
+
+  if (engagement.severe >= 2 || (engagement.severe >= 1 && engagement.moderate >= 1)) {
+    return "red";
+  }
+
+  if (engagement.severe >= 1 || engagement.moderate >= 2) {
+    return "yellow";
   }
 
   if (hasLatestSessionAt && latestActivityDays > 14) {
@@ -148,6 +195,15 @@ export const getStudentSignalReason = (
   const hasLatestSessionAt = Boolean(evidence.latestSessionAt);
   const hasUserMessageCount = typeof evidence.userMessageCount === "number";
   const userMessageCount = evidence.userMessageCount ?? 0;
+  const engagement = engagementRisk(evidence.recentUserText);
+
+  if (engagement.severe >= 2 || (engagement.severe >= 1 && engagement.moderate >= 1)) {
+    return "최근 학생 발화에서 학습 회피나 흥미 저하 표현이 반복되어 교사 확인이 필요합니다.";
+  }
+
+  if (engagement.severe >= 1 || engagement.moderate >= 2) {
+    return "최근 학생 발화에서 수학 학습에 대한 부담감이나 흥미 저하 신호가 보입니다.";
+  }
 
   if (!hasSession) {
     return "학습 세션이 없어 교사 확인이 필요합니다.";
