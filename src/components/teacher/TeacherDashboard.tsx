@@ -20,6 +20,7 @@ import {
 import { getClassKey, getClassLabel, isTeacherVisibleStudent } from "../../lib/userUtils";
 import {
   getStudentSignal as getStudentSignalStatus,
+  getStudentSignalReason as getStudentSignalReasonText,
   StudentSignalEvidence,
 } from "../../lib/studentSignals";
 
@@ -56,6 +57,7 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
   const [saving, setSaving] = useState(false);
   const [dashboardStudents, setDashboardStudents] = useState<UserProfile[]>([]);
   const [latestSessionsByStudent, setLatestSessionsByStudent] = useState<Record<string, any>>({});
+  const [latestReportByStudent, setLatestReportByStudent] = useState<Record<string, any>>({});
   const [signalEvidenceByStudent, setSignalEvidenceByStudent] = useState<Record<string, StudentSignalEvidence>>({});
   const [performanceData, setPerformanceData] = useState(CLASS_PERFORMANCE_DATA);
   const [conceptData, setConceptData] = useState(UNIT_UNDERSTANDING_DATA);
@@ -133,6 +135,8 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
             reportByStudent[userId] = report;
           }
         });
+        setLatestReportByStudent(reportByStudent);
+
         const messageStatsBySession = (messages || []).reduce((acc: Record<string, { user: number; total: number; userTexts: string[] }>, message: any) => {
           if (!acc[message.session_id]) acc[message.session_id] = { user: 0, total: 0, userTexts: [] };
           acc[message.session_id].total += 1;
@@ -290,6 +294,22 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
     } finally {
       setSaving(false);
     }
+  };
+
+  const getStudentSignal = (student: UserProfile): "green" | "yellow" | "red" => {
+    return getStudentSignalStatus(
+      latestReportByStudent?.[student.id],
+      Boolean(latestSessionsByStudent?.[student.id]),
+      signalEvidenceByStudent[student.id],
+    );
+  };
+
+  const getStudentSignalReason = (student: UserProfile): string => {
+    return getStudentSignalReasonText(
+      latestReportByStudent?.[student.id],
+      Boolean(latestSessionsByStudent?.[student.id]),
+      signalEvidenceByStudent[student.id],
+    );
   };
 
   return (
@@ -463,15 +483,39 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
           <div className="p-5 border-b border-highlight flex justify-between items-center bg-gray-50/30 rounded-t-xl">
             <div className="flex items-center gap-3">
               <h3 className="font-bold text-sm text-ink uppercase tracking-wide">우리 반 학생 목록</h3>
+              <div className="flex items-center gap-3 text-[11px] font-semibold text-secondary-text">
+                <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-green-400"/>정상</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-yellow-400"/>주의</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-red-500"/>개입필요</span>
+              </div>
             </div>
             <span className="text-[10px] font-bold text-secondary-text bg-highlight px-2 py-1 rounded">전체 {dashboardStudents.length}명</span>
           </div>
           <div className="divide-y divide-highlight">
             {dashboardStudents.length === 0 ? (
               <div className="px-6 py-12 text-center text-sm font-bold text-gray-400">표시할 학생 데이터가 없습니다.</div>
-            ) : dashboardStudents.map(s => (
+            ) : dashboardStudents.map(s => {
+              const signal = getStudentSignal(s);
+              const signalColor = {
+                green: "bg-green-400",
+                yellow: "bg-yellow-400",
+                red: "bg-red-500",
+              }[signal];
+              const signalTitle = {
+                green: "정상 학습 중",
+                yellow: "학습 주의 필요",
+                red: "교사 개입 필요",
+              }[signal];
+              return (
               <Link to={`/teacher/analysis/${s.id}`} key={s.id} className="flex items-center justify-between p-4 px-6 hover:bg-paper transition-colors group">
                 <div className="flex items-center gap-3">
+                  <div className="relative flex-shrink-0">
+                    <span className={`inline-block w-2.5 h-2.5 rounded-full ${signalColor}`} />
+                    <div className="absolute bottom-full left-0 mb-2 w-56 rounded-xl bg-gray-900 px-3 py-2.5 text-[10px] font-semibold leading-relaxed text-white shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-normal">
+                      <p className="font-black mb-1 text-[9px] uppercase tracking-widest opacity-60">{signalTitle}</p>
+                      <p>{getStudentSignalReason(s)}</p>
+                    </div>
+                  </div>
                   <div className="w-8 h-8 rounded-full bg-highlight border border-gray-200 flex items-center justify-center text-xs font-bold text-accent">
                     {s.name?.[0] ?? "?"}
                   </div>
@@ -490,7 +534,8 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
                   <ChevronRight size={16} className="text-gray-300 group-hover:text-accent transition-colors" />
                 </div>
               </Link>
-            ))}
+              );
+            })}
           </div>
         </div>
 

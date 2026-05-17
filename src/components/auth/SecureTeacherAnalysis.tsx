@@ -40,6 +40,8 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
   const [archiveSessions, setArchiveSessions] = useState<ArchivedSessionDocument[]>([]);
   const [expandedArchiveSession, setExpandedArchiveSession] = useState<string | null>(null);
   const isReportStale = hasSessionActivitySinceReport(messages, report);
+  const [latestReportByStudent, setLatestReportByStudent] = useState<Record<string, any>>({});
+  const [latestSessionByStudent, setLatestSessionByStudent] = useState<Record<string, any>>({});
   const [signalTooltip, setSignalTooltip] = useState<{ x: number; y: number; label: string; reason: string } | null>(null);
 
   const fetchStudents = async () => {
@@ -50,6 +52,7 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
     }
     const nextStudents = (data || []).filter(isTeacherVisibleStudent);
     setStudents(nextStudents);
+    fetchAllStudentReports(nextStudents);
     setSelectedStudent((current) => {
       if (selectedStudentIdFromRoute && nextStudents.some((student) => student.id === selectedStudentIdFromRoute)) {
         return nextStudents.find((student) => student.id === selectedStudentIdFromRoute) || null;
@@ -118,6 +121,25 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
     }
   };
 
+  const fetchAllStudentReports = async (studentList: UserProfile[]) => {
+    if (!studentList.length) return;
+    const ids = studentList.map((s) => s.id);
+    const { data: allSessions } = await supabase.from("chat_sessions").select("id, user_id").in("user_id", ids);
+    if (!allSessions?.length) return;
+    const sessionOwner = Object.fromEntries(allSessions.map((s) => [s.id, s.user_id]));
+    const sessionByStudent: Record<string, any> = {};
+    allSessions.forEach((s) => { if (!sessionByStudent[s.user_id]) sessionByStudent[s.user_id] = s; });
+    setLatestSessionByStudent(sessionByStudent);
+    const sessionIds = allSessions.map((s) => s.id);
+    const { data: allReports } = await supabase.from("reports").select("*").in("session_id", sessionIds).order("created_at", { ascending: false });
+    const reportMap: Record<string, any> = {};
+    (allReports || []).forEach((r) => {
+      const userId = sessionOwner[r.session_id];
+      if (userId && !reportMap[userId]) reportMap[userId] = r;
+    });
+    setLatestReportByStudent(reportMap);
+  };
+
   useEffect(() => { fetchStudents(); }, []);
   useEffect(() => { setClassFilter(selectedClassKey); }, [selectedClassKey]);
   useEffect(() => {
@@ -157,6 +179,14 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
     const classStudent = students.find((student) => getClassKey(student) === key)!;
     return { key, label: getClassLabel(classStudent) };
   });
+
+  const getStudentSignal = (student: UserProfile): "green" | "yellow" | "red" => {
+    return getStudentSignalStatus(latestReportByStudent[student.id], Boolean(latestSessionByStudent[student.id]));
+  };
+
+  const getStudentSignalReason = (student: UserProfile): string => {
+    return getStudentSignalReasonText(latestReportByStudent[student.id], Boolean(latestSessionByStudent[student.id]));
+  };
 
   const signalColorClass = { green: "bg-green-400", yellow: "bg-yellow-400", red: "bg-red-500" };
   const signalLabel = { green: "정상 학습 중", yellow: "학습 주의 필요", red: "교사 개입 필요" };
