@@ -26,6 +26,7 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
   const [selectedSession, setSelectedSession] = useState<any | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [report, setReport] = useState<LearningReport | null>(null);
+  const [sessionReportsById, setSessionReportsById] = useState<Record<string, LearningReport>>({});
   const [activeTab, setActiveTab] = useState<"report" | "chat" | "history">("report");
   const [searchTerm, setSearchTerm] = useState("");
   const [classFilter, setClassFilter] = useState("");
@@ -70,6 +71,24 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
     const nextSessions = data || [];
     setSessions(nextSessions);
     setSelectedSession((current: any) => nextSessions.find((session) => session.id === current?.id) || nextSessions[0] || null);
+
+    const sessionIds = nextSessions.map((session) => session.id);
+    if (!sessionIds.length) {
+      setSessionReportsById({});
+      return;
+    }
+    const { data: sessionReports, error: sessionReportsError } = await supabase
+      .from("reports")
+      .select("*")
+      .in("session_id", sessionIds);
+    if (sessionReportsError) {
+      console.error("Failed to fetch session reports:", sessionReportsError);
+      setSessionReportsById({});
+      return;
+    }
+    setSessionReportsById(
+      Object.fromEntries((sessionReports || []).map((sessionReport) => [sessionReport.session_id, sessionReport])),
+    );
   };
 
   const fetchSessionDetails = async (sessionId: string) => {
@@ -127,6 +146,7 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
     if (!selectedStudent?.id) {
       setSessions([]);
       setSelectedSession(null);
+      setSessionReportsById({});
       setArchiveProfile("");
       setArchiveTimeline("");
       setArchiveSessions([]);
@@ -171,14 +191,20 @@ const SecureTeacherAnalysis = ({ profile, selectedClassKey = "" }: { profile: Us
   const signalColorClass = { green: "bg-green-400", yellow: "bg-yellow-400", red: "bg-red-500" };
   const signalLabel = { green: "정상 학습 중", yellow: "학습 주의 필요", red: "교사 개입 필요" };
 
-  const updateSignalTooltip = (event: MouseEvent, student: UserProfile, signal: "green" | "yellow" | "red") => {
+  const getSessionSignal = (sessionItem: any): "green" | "yellow" | "red" =>
+    getStudentSignalStatus(sessionReportsById[sessionItem.id], true, { latestSessionAt: sessionItem.created_at });
+
+  const getSessionSignalReason = (sessionItem: any): string =>
+    getStudentSignalReasonText(sessionReportsById[sessionItem.id], true, { latestSessionAt: sessionItem.created_at });
+
+  const updateSignalTooltip = (event: MouseEvent, label: string, reason: string) => {
     const width = 208;
     const estimatedHeight = 96;
     setSignalTooltip({
       x: Math.max(12, event.clientX - width - 14),
       y: Math.min(window.innerHeight - estimatedHeight - 12, event.clientY + 16),
-      label: signalLabel[signal],
-      reason: getStudentSignalReason(student),
+      label,
+      reason,
     });
   };
 
@@ -316,27 +342,12 @@ ${chatContext}
           </select>
         </div>
         <div className="divide-y divide-highlight overflow-y-auto">
-          {filteredStudents.map((student) => {
-            const signal = getStudentSignal(student);
-            return (
-              <button key={student.id} onClick={() => setSelectedStudent(student)} className={cn("group relative w-full px-5 py-4 text-left transition-all hover:bg-paper", selectedStudent?.id === student.id && "bg-paper")}>
-                <div className="flex items-center gap-2.5">
-                  <div
-                    className="relative flex-shrink-0"
-                    onMouseEnter={(event) => updateSignalTooltip(event, student, signal)}
-                    onMouseMove={(event) => updateSignalTooltip(event, student, signal)}
-                    onMouseLeave={() => setSignalTooltip(null)}
-                  >
-                    <span className={`inline-block w-2 h-2 rounded-full ${signalColorClass[signal]}`} />
-                  </div>
-                  <div>
-                    <p className="text-sm font-black text-ink">{student.name}</p>
-                    <p className="text-[10px] font-bold text-secondary-text">{getClassLabel(student)} / {student.number || "-"}번</p>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
+          {filteredStudents.map((student) => (
+            <button key={student.id} onClick={() => setSelectedStudent(student)} className={cn("group relative w-full px-5 py-4 text-left transition-all hover:bg-paper", selectedStudent?.id === student.id && "bg-paper")}>
+              <p className="text-sm font-black text-ink">{student.name}</p>
+              <p className="text-[10px] font-bold text-secondary-text">{getClassLabel(student)} / {student.number || "-"}번</p>
+            </button>
+          ))}
         </div>
       </div>
       <div className="min-h-[500px] overflow-hidden rounded-2xl border border-highlight bg-white shadow-sm">
@@ -348,12 +359,26 @@ ${chatContext}
           <button onClick={openInstructionModal} disabled={!selectedStudent} className="rounded-xl bg-accent px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50">교사 개별 지침</button>
         </div>
         <div className="divide-y divide-highlight overflow-y-auto">
-          {sessions.map((sessionItem) => (
-            <button key={sessionItem.id} onClick={() => setSelectedSession(sessionItem)} className={cn("w-full px-5 py-4 text-left transition-all hover:bg-paper", selectedSession?.id === sessionItem.id && "bg-paper")}>
-              <p className="text-sm font-black text-ink">{sessionItem.title}</p>
-              <p className="text-[10px] font-bold text-secondary-text">{new Date(sessionItem.created_at).toLocaleString()}</p>
-            </button>
-          ))}
+          {sessions.map((sessionItem) => {
+            const signal = getSessionSignal(sessionItem);
+            return (
+              <button key={sessionItem.id} onClick={() => setSelectedSession(sessionItem)} className={cn("w-full px-5 py-4 text-left transition-all hover:bg-paper", selectedSession?.id === sessionItem.id && "bg-paper")}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-black text-ink">{sessionItem.title}</p>
+                    <p className="text-[10px] font-bold text-secondary-text">{new Date(sessionItem.created_at).toLocaleString()}</p>
+                  </div>
+                  <span
+                    className={`mt-1 inline-block h-2.5 w-2.5 flex-shrink-0 rounded-full ${signalColorClass[signal]}`}
+                    onMouseEnter={(event) => updateSignalTooltip(event, signalLabel[signal], getSessionSignalReason(sessionItem))}
+                    onMouseMove={(event) => updateSignalTooltip(event, signalLabel[signal], getSessionSignalReason(sessionItem))}
+                    onMouseLeave={() => setSignalTooltip(null)}
+                    aria-label={signalLabel[signal]}
+                  />
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
       <div className="min-h-[500px] overflow-hidden rounded-2xl border border-highlight bg-white shadow-sm flex flex-col">
@@ -473,7 +498,7 @@ ${chatContext}
                 </div>
                 <button onClick={() => setShowInstructionModal(false)} className="rounded-full p-2 transition-colors hover:bg-paper"><X size={20} /></button>
               </div>
-              <div className="max-h-[70vh] space-y-4 overflow-y-auto p-8">
+              <div className="max-h-[76vh] space-y-3 overflow-y-auto p-6">
                 {[
                   ["weeklyGoals", "주간 학습 목표"],
                   ["keyConcepts", "핵심 개념"],
@@ -485,7 +510,7 @@ ${chatContext}
                 ].map(([field, label]) => (
                   <div key={field} className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-secondary-text">{label}</label>
-                    <textarea value={(tempInstructions as any)[field] || ""} onChange={(e) => setTempInstructions({ ...tempInstructions, [field]: e.target.value })} className="h-24 w-full resize-none rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none" />
+                    <textarea value={(tempInstructions as any)[field] || ""} onChange={(e) => setTempInstructions({ ...tempInstructions, [field]: e.target.value })} className="h-16 w-full resize-none rounded-xl border border-highlight bg-paper p-3 text-sm font-semibold outline-none" />
                   </div>
                 ))}
                 <div className="space-y-2">

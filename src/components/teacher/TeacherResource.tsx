@@ -21,7 +21,7 @@ import { extractPdfPages } from "../../lib/pdfExtract";
 
 type ResourceDraft = Pick<
   TeacherResourceMetadata,
-  "title" | "subject" | "gradeLabel" | "unit" | "description" | "keyConcepts" | "importantExamples" | "commonMisconceptions"
+  "title" | "subject" | "gradeLabel" | "unit" | "description"
 >;
 
 const emptyResourceDraft: ResourceDraft = {
@@ -30,9 +30,6 @@ const emptyResourceDraft: ResourceDraft = {
   gradeLabel: "",
   unit: "",
   description: "",
-  keyConcepts: "",
-  importantExamples: "",
-  commonMisconceptions: "",
 };
 
 const defaultWeekRange = () => {
@@ -126,9 +123,9 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
     gradeLabel: resourceDraft.gradeLabel.trim(),
     unit: resourceDraft.unit.trim(),
     description: resourceDraft.description.trim(),
-    keyConcepts: resourceDraft.keyConcepts.trim(),
-    importantExamples: resourceDraft.importantExamples.trim(),
-    commonMisconceptions: resourceDraft.commonMisconceptions.trim(),
+    keyConcepts: "",
+    importantExamples: "",
+    commonMisconceptions: "",
     classKey: currentClassKey,
     category,
     fileName: file.name,
@@ -187,9 +184,6 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
       gradeLabel: item.gradeLabel || "",
       unit: item.unit || "",
       description: item.description || "",
-      keyConcepts: item.keyConcepts || "",
-      importantExamples: item.importantExamples || "",
-      commonMisconceptions: item.commonMisconceptions || "",
     });
   };
 
@@ -206,9 +200,9 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
         gradeLabel: resourceDraft.gradeLabel.trim(),
         unit: resourceDraft.unit.trim(),
         description: resourceDraft.description.trim(),
-        keyConcepts: resourceDraft.keyConcepts.trim(),
-        importantExamples: resourceDraft.importantExamples.trim(),
-        commonMisconceptions: resourceDraft.commonMisconceptions.trim(),
+        keyConcepts: target.keyConcepts || "",
+        importantExamples: target.importantExamples || "",
+        commonMisconceptions: target.commonMisconceptions || "",
         classKey: target.classKey || currentClassKey,
         category: target.category,
         fileName: target.fileName || target.name,
@@ -431,10 +425,7 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
             <input value={resourceDraft.gradeLabel} onChange={(e) => setResourceDraft((prev) => ({ ...prev, gradeLabel: e.target.value }))} placeholder="학년 (예: 1학년)" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
             <input value={resourceDraft.unit} onChange={(e) => setResourceDraft((prev) => ({ ...prev, unit: e.target.value }))} placeholder="단원" className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold outline-none" />
           </div>
-          <textarea value={resourceDraft.description} onChange={(e) => setResourceDraft((prev) => ({ ...prev, description: e.target.value }))} placeholder="자료 설명" className="h-24 w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none resize-none" />
-          <textarea value={resourceDraft.keyConcepts} onChange={(e) => setResourceDraft((prev) => ({ ...prev, keyConcepts: e.target.value }))} placeholder="핵심 개념" className="h-24 w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none resize-none" />
-          <textarea value={resourceDraft.importantExamples} onChange={(e) => setResourceDraft((prev) => ({ ...prev, importantExamples: e.target.value }))} placeholder="중요 문제/예시" className="h-24 w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none resize-none" />
-          <textarea value={resourceDraft.commonMisconceptions} onChange={(e) => setResourceDraft((prev) => ({ ...prev, commonMisconceptions: e.target.value }))} placeholder="자주 나오는 오개념" className="h-24 w-full rounded-xl border border-highlight bg-paper p-4 text-sm font-semibold outline-none resize-none" />
+          <textarea value={resourceDraft.description} onChange={(e) => setResourceDraft((prev) => ({ ...prev, description: e.target.value }))} placeholder="자료 설명" className="h-16 w-full rounded-xl border border-highlight bg-paper p-3 text-sm font-semibold outline-none resize-none" />
 
           {!editingObjectPath && (
             <div
@@ -644,9 +635,6 @@ const TeacherResource = ({ selectedClassKey }: { selectedClassKey: string }) => 
               {item.subject && <div className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold text-ink">과목: {item.subject}</div>}
               {item.unit && <div className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold text-ink">단원: {item.unit}</div>}
               {item.description && <div className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold text-ink md:col-span-2">자료 설명: {item.description}</div>}
-              {item.keyConcepts && <div className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold text-ink">핵심 개념: {item.keyConcepts}</div>}
-              {item.importantExamples && <div className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold text-ink">중요 문제/예시: {item.importantExamples}</div>}
-              {item.commonMisconceptions && <div className="rounded-xl border border-highlight bg-paper px-4 py-3 text-sm font-semibold text-ink md:col-span-2">자주 나오는 오개념: {item.commonMisconceptions}</div>}
             </div>
           </div>
         ))}
