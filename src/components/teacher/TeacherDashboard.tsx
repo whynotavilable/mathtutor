@@ -344,52 +344,52 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="relative w-full max-w-4xl bg-white rounded-3xl border border-highlight shadow-2xl overflow-hidden"
+              className="relative w-full max-w-2xl bg-white rounded-3xl border border-highlight shadow-2xl overflow-hidden"
             >
-              <header className="px-8 py-5 border-b border-highlight bg-paper/30 flex justify-between items-center">
+              <header className="px-10 py-8 border-b border-highlight bg-paper/30 flex justify-between items-center">
                 <div>
                   <h3 className="text-2xl font-black text-ink uppercase tracking-tight">교사 학급 지침</h3>
                   <p className="text-[10px] text-secondary-text font-bold uppercase tracking-widest mt-1">학급: {selectedClassKey ? selectedClassKey.replace("-", "학년 ") + "반" : "전체 학급"} • AI 튜터 동작 방식</p>
                 </div>
                 <button onClick={() => setShowClassInstructions(false)} className="p-2 hover:bg-paper rounded-full transition-colors"><X size={24} /></button>
               </header>
-              <div className="p-8 space-y-5 max-h-[72vh] overflow-y-auto">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="space-y-4">
+              <div className="p-10 space-y-8 max-h-[70vh] overflow-y-auto">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-6">
                     <h4 className="text-[11px] font-black text-accent uppercase tracking-widest border-l-4 border-accent pl-3">학급 공통 지침</h4>
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       <div className="space-y-2">
                         <label className="text-[9px] font-black text-secondary-text uppercase tracking-widest">이번 주 학습 목표</label>
-                        <textarea value={classInstructions.weeklyGoals} onChange={e => setClassInstructions({ ...classInstructions, weeklyGoals: e.target.value })} className="w-full p-3 bg-paper border border-highlight rounded-xl text-xs font-semibold outline-none focus:ring-1 focus:ring-accent h-14 resize-none" />
+                        <textarea value={classInstructions.weeklyGoals} onChange={e => setClassInstructions({ ...classInstructions, weeklyGoals: e.target.value })} className="w-full p-4 bg-paper border border-highlight rounded-xl text-xs font-semibold outline-none focus:ring-1 focus:ring-accent h-20 resize-none" />
                       </div>
                       <div className="space-y-2">
                         <label className="text-[9px] font-black text-secondary-text uppercase tracking-widest">강조 개념</label>
-                        <input value={classInstructions.keyConcepts} onChange={e => setClassInstructions({ ...classInstructions, keyConcepts: e.target.value })} className="w-full p-3 bg-paper border border-highlight rounded-xl text-xs font-semibold outline-none focus:ring-1 focus:ring-accent" />
+                        <input value={classInstructions.keyConcepts} onChange={e => setClassInstructions({ ...classInstructions, keyConcepts: e.target.value })} className="w-full p-4 bg-paper border border-highlight rounded-xl text-xs font-semibold outline-none focus:ring-1 focus:ring-accent" />
                       </div>
                       <div className="space-y-2">
                         <label className="text-[9px] font-black text-secondary-text uppercase tracking-widest">문제 난이도 기준</label>
-                        <input value={classInstructions.difficultyLevel} onChange={e => setClassInstructions({ ...classInstructions, difficultyLevel: e.target.value })} className="w-full p-3 bg-paper border border-highlight rounded-xl text-xs font-semibold outline-none focus:ring-1 focus:ring-accent" />
+                        <input value={classInstructions.difficultyLevel} onChange={e => setClassInstructions({ ...classInstructions, difficultyLevel: e.target.value })} className="w-full p-4 bg-paper border border-highlight rounded-xl text-xs font-semibold outline-none focus:ring-1 focus:ring-accent" />
                       </div>
                     </div>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     <h4 className="text-[11px] font-black text-accent uppercase tracking-widest border-l-4 border-accent pl-3">AI 튜터 동작 지침</h4>
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       <div className="space-y-2">
                         <label className="text-[9px] font-black text-secondary-text uppercase tracking-widest">질문 및 피드백 방식</label>
-                        <select value={classInstructions.aiQuestionStyle} onChange={e => setClassInstructions({ ...classInstructions, aiQuestionStyle: e.target.value as any })} className="w-full p-3 bg-paper border border-highlight rounded-xl text-xs font-semibold outline-none focus:ring-1 focus:ring-accent">
+                        <select value={classInstructions.aiQuestionStyle} onChange={e => setClassInstructions({ ...classInstructions, aiQuestionStyle: e.target.value as any })} className="w-full p-4 bg-paper border border-highlight rounded-xl text-xs font-semibold outline-none focus:ring-1 focus:ring-accent">
                           <option value="inductive">유도형 (질문을 통해 깨닫게 함)</option>
                           <option value="direct">직접 설명 (개념을 바로 설명함)</option>
                         </select>
                       </div>
                       <div className="space-y-2">
                         <label className="text-[9px] font-black text-secondary-text uppercase tracking-widest">오개념 대응 방식</label>
-                        <textarea value={classInstructions.aiMisconceptionResponse} onChange={e => setClassInstructions({ ...classInstructions, aiMisconceptionResponse: e.target.value })} className="w-full p-3 bg-paper border border-highlight rounded-xl text-xs font-semibold outline-none focus:ring-1 focus:ring-accent h-14 resize-none" />
+                        <textarea value={classInstructions.aiMisconceptionResponse} onChange={e => setClassInstructions({ ...classInstructions, aiMisconceptionResponse: e.target.value })} className="w-full p-4 bg-paper border border-highlight rounded-xl text-xs font-semibold outline-none focus:ring-1 focus:ring-accent h-20 resize-none" />
                       </div>
                       <div className="space-y-2">
                         <label className="text-[9px] font-black text-secondary-text uppercase tracking-widest">학생 참여 유도 전략</label>
-                        <textarea value={classInstructions.aiEngagementStrategy} onChange={e => setClassInstructions({ ...classInstructions, aiEngagementStrategy: e.target.value })} className="w-full p-3 bg-paper border border-highlight rounded-xl text-xs font-semibold outline-none focus:ring-1 focus:ring-accent h-14 resize-none" />
+                        <textarea value={classInstructions.aiEngagementStrategy} onChange={e => setClassInstructions({ ...classInstructions, aiEngagementStrategy: e.target.value })} className="w-full p-4 bg-paper border border-highlight rounded-xl text-xs font-semibold outline-none focus:ring-1 focus:ring-accent h-20 resize-none" />
                       </div>
                     </div>
                   </div>
@@ -397,10 +397,10 @@ const TeacherDashboard = ({ profile, selectedClassKey }: { profile: UserProfile 
 
                 <div className="space-y-2">
                   <label className="text-[9px] font-black text-secondary-text uppercase tracking-widest">풀이 방식 지침</label>
-                  <textarea value={classInstructions.solvingGuideline} onChange={e => setClassInstructions({ ...classInstructions, solvingGuideline: e.target.value })} className="w-full p-3 bg-paper border border-highlight rounded-xl text-sm font-semibold outline-none focus:ring-1 focus:ring-accent h-16 resize-none leading-relaxed" />
+                  <textarea value={classInstructions.solvingGuideline} onChange={e => setClassInstructions({ ...classInstructions, solvingGuideline: e.target.value })} className="w-full p-4 bg-paper border border-highlight rounded-xl text-sm font-semibold outline-none focus:ring-1 focus:ring-accent h-24 resize-none leading-relaxed" />
                 </div>
               </div>
-              <footer className="px-8 py-5 border-t border-highlight bg-paper/10 flex justify-end gap-4">
+              <footer className="px-10 py-8 border-t border-highlight bg-paper/10 flex justify-end gap-4">
                 <button
                   onClick={() => setShowClassInstructions(false)}
                   className="px-8 py-4 border border-highlight rounded-2xl text-xs font-black text-secondary-text hover:bg-paper transition-all uppercase tracking-widest"

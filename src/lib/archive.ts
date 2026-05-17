@@ -135,10 +135,7 @@ export const buildSessionArchiveMarkdown = ({
 export const normalizeReportText = (value?: string | null, fallback = "") => {
   const text = `${value || fallback}`.trim();
   if (!text) return fallback;
-  return text
-    .replace(/^"(.*)"$/s, "$1")
-    .replace(/\b학생\s*\d+\b[:：]?\s*/g, "")
-    .trim();
+  return text.replace(/^"(.*)"$/s, "$1").trim();
 };
 
 export const hasSessionActivitySinceReport = (

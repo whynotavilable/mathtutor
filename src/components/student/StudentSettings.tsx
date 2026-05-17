@@ -116,7 +116,7 @@ const StudentSettings = ({
               <textarea
                 value={(instructions as any)[item.key]}
                 onChange={(e) => setInstructions({ ...instructions, [item.key]: e.target.value })}
-                className="w-full p-3 rounded-xl border border-highlight bg-paper text-sm font-semibold text-ink outline-none focus:ring-1 focus:ring-accent transition-all h-16 resize-none leading-relaxed"
+                className="w-full p-3 rounded-xl border border-highlight bg-paper text-sm font-semibold text-ink outline-none focus:ring-1 focus:ring-accent transition-all h-20 resize-none leading-relaxed"
               />
             </div>
           ))}
